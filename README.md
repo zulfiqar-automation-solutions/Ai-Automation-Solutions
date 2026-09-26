@@ -1,2 +1,2 @@
 # Ai-Automation-Solutions
-Client-ready AI automation solutions built with n8n, Make, AI agents, CRM integrations, APIs, and business process automation.
+Client-ready AI automation solutions built with n8n, Make, and Zapier AI agents, CRM integrations, APIs, and business process automation.
