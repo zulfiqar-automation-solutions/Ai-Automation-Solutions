@@ -1,0 +1,630 @@
+{
+  "name": "CRM Hygiene & Dedup — 00 Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 2 * * *"
+            }
+          ]
+        }
+      },
+      "id": "eb3c5bab-9672-4ed0-953c-56009ed0f682",
+      "name": "⏰ Daily Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        48,
+        352
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "aaf26a04-1a6f-455e-9480-92338b5cf256",
+      "name": "▶ Manual Run",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        48,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a0",
+              "name": "dryRun",
+              "type": "boolean",
+              "value": "={{ false }}"
+            },
+            {
+              "id": "a3",
+              "name": "maxRecordsForDedup",
+              "type": "number",
+              "value": "={{ 10000 }}"
+            },
+            {
+              "id": "a4",
+              "name": "runHygiene",
+              "type": "boolean",
+              "value": "={{ true }}"
+            },
+            {
+              "id": "a5",
+              "name": "runDedup",
+              "type": "boolean",
+              "value": "={{ true }}"
+            },
+            {
+              "id": "a6",
+              "name": "includeContacts",
+              "type": "boolean",
+              "value": "={{ true }}"
+            },
+            {
+              "id": "a7",
+              "name": "includeCompanies",
+              "type": "boolean",
+              "value": "={{ true }}"
+            },
+            {
+              "id": "a8",
+              "name": "includeDeals",
+              "type": "boolean",
+              "value": "={{ true }}"
+            },
+            {
+              "id": "a9",
+              "name": "hygieneMode",
+              "type": "string",
+              "value": "delta"
+            },
+            {
+              "id": "a10",
+              "name": "hygieneLookbackHours",
+              "type": "number",
+              "value": "={{ 26 }}"
+            },
+            {
+              "id": "a11",
+              "name": "defaultCountry",
+              "type": "string",
+              "value": "US"
+            },
+            {
+              "id": "a12",
+              "name": "writeHygieneProps",
+              "type": "boolean",
+              "value": "={{ true }}"
+            },
+            {
+              "id": "a13",
+              "name": "autoMergeThreshold",
+              "type": "number",
+              "value": "={{ 95 }}"
+            },
+            {
+              "id": "a14",
+              "name": "reviewThreshold",
+              "type": "number",
+              "value": "={{ 72 }}"
+            },
+            {
+              "id": "a15",
+              "name": "logThreshold",
+              "type": "number",
+              "value": "={{ 55 }}"
+            },
+            {
+              "id": "a16",
+              "name": "autoMergeObjects",
+              "type": "string",
+              "value": "contacts,companies"
+            },
+            {
+              "id": "a17",
+              "name": "primaryStrategy",
+              "type": "string",
+              "value": "mostComplete"
+            },
+            {
+              "id": "a18",
+              "name": "pageSize",
+              "type": "number",
+              "value": "={{ 100 }}"
+            },
+            {
+              "id": "a19",
+              "name": "apiThrottleMs",
+              "type": "number",
+              "value": "={{ 250 }}"
+            },
+            {
+              "id": "a20",
+              "name": "slackChannel",
+              "type": "string",
+              "value": "#crm-hygiene"
+            },
+            {
+              "id": "a21",
+              "name": "slackAlertChannel",
+              "type": "string",
+              "value": "#crm-hygiene-alerts"
+            },
+            {
+              "id": "a22",
+              "name": "notifyLowConfidence",
+              "type": "boolean",
+              "value": "={{ true }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "98b24cc6-a969-403c-94a9-bdee7d660aa7",
+      "name": "⚙️ Global Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        288,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// Fan the run out into an ordered job queue. Hygiene always runs before dedup:\n// clean keys produce far fewer false-positive duplicate pairs.\nconst cfg = $input.first().json;\nconst runId = `${$execution.id}-${Date.now().toString(36)}`;\n\nconst objects = [];\nif (cfg.includeContacts)  objects.push('contacts');\nif (cfg.includeCompanies) objects.push('companies');\nif (cfg.includeDeals)     objects.push('deals');\n\nconst jobs = [];\nif (cfg.runHygiene) for (const o of objects) jobs.push({ kind: 'hygiene',  objectType: o });\nif (cfg.runDedup)   for (const o of objects) jobs.push({ kind: 'dedup',    objectType: o });\n\nif (!jobs.length) {\n  throw new Error('Nothing to run: enable runHygiene/runDedup and at least one object type.');\n}\n\nreturn jobs.map((j, i) => ({\n  json: {\n    ...j,\n    runId,\n    jobIndex: i + 1,\n    jobCount: jobs.length,\n    startedAt: new Date().toISOString(),\n    config: cfg,\n  },\n}));\n"
+      },
+      "id": "ee9e4cbd-0a83-4d25-87a9-a15daf8fb0f8",
+      "name": "🧱 Build Job Queue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "reset": false
+        }
+      },
+      "id": "1f4ddf89-7c6d-4078-b559-b07e6b549f60",
+      "name": "🔁 Run Jobs Sequentially",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        752,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "s0",
+                    "leftValue": "={{ $json.kind }}",
+                    "rightValue": "hygiene",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "hygiene"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "s1",
+                    "leftValue": "={{ $json.kind }}",
+                    "rightValue": "dedup",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "dedup"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "none"
+        }
+      },
+      "id": "17849dc2-355c-456b-8922-7f802102a283",
+      "name": "↔️ Hygiene or Dedup?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        960,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1ExxeFyKssBgeqU2"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "cd1ecfdd-74f4-4791-992d-8a52cab31274",
+      "name": "🧼 Run Hygiene Engine",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1200,
+        448
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "3qqmn6CFVwQWO3mD"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "93c64dc1-d671-4fd6-b031-48228bca7ff8",
+      "name": "🔍 Run Duplicate Detector",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1200,
+        640
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// Normalise whatever the sub-workflow returned (or the error it threw) into one\n// summary row per job, so the \"done\" branch of the loop holds the full run log.\nconst job = $('🔁 Run Jobs Sequentially').first().json;\nconst out = [];\nfor (const item of $input.all()) {\n  const j = item.json || {};\n  out.push({\n    json: {\n      runId: job.runId,\n      kind: job.kind,\n      objectType: job.objectType,\n      ok: !j.error,\n      error: j.error ? String(j.error.message || j.error) : null,\n      summary: j.summary || j,\n      finishedAt: new Date().toISOString(),\n    },\n  });\n}\nif (!out.length) out.push({ json: { runId: job.runId, kind: job.kind,\n  objectType: job.objectType, ok: false, error: 'Sub-workflow returned no items', summary: {} } });\nreturn out;\n"
+      },
+      "id": "255f34c0-fad2-4f88-bdca-df47e74a7988",
+      "name": "📥 Collect Job Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1472,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst rows = $input.all().map(i => i.json);\nconst cfg  = $('⚙️ Global Config').first().json;\nconst runId = rows[0]?.runId || 'n/a';\n\nconst num = v => (typeof v === 'number' ? v : 0);\nconst t = { scanned:0, cleaned:0, fieldsFixed:0, flagged:0, pairs:0, autoMerged:0,\n            pendingApproval:0, lowConfidence:0, writeErrors:0, failedJobs:0 };\n\nconst lines = [];\nfor (const r of rows) {\n  const sMap = r.summary || {};\n  if (!r.ok) { t.failedJobs++; lines.push(`• :x: *${r.kind}/${r.objectType}* — ${r.error}`); continue; }\n  t.scanned         += num(sMap.scanned);\n  t.cleaned         += num(sMap.recordsUpdated);\n  t.fieldsFixed     += num(sMap.fieldsChanged);\n  t.flagged         += num(sMap.recordsFlagged);\n  t.pairs           += num(sMap.pairsFound);\n  t.autoMerged      += num(sMap.autoQueued);\n  t.pendingApproval += num(sMap.reviewQueued);\n  t.lowConfidence   += num(sMap.loggedOnly);\n  t.writeErrors     += num(sMap.writeErrors);\n  lines.push(r.kind === 'hygiene'\n    ? `• :broom: *${r.objectType}* — scanned ${num(sMap.scanned)}, cleaned ${num(sMap.recordsUpdated)}, fields fixed ${num(sMap.fieldsChanged)}, flagged ${num(sMap.recordsFlagged)}`\n    : `• :mag: *${r.objectType}* — scanned ${num(sMap.scanned)}, duplicate pairs ${num(sMap.pairsFound)} (auto ${num(sMap.autoQueued)} / review ${num(sMap.reviewQueued)} / log ${num(sMap.loggedOnly)})`);\n}\n\nconst mode = cfg.dryRun ? ':test_tube: *DRY RUN — no HubSpot records were changed*'\n                        : ':white_check_mark: Live mode';\nconst header = t.failedJobs ? ':rotating_light: CRM Hygiene & Dedup — completed with errors'\n                            : ':sparkles: CRM Hygiene & Dedup — run complete';\n\nconst digestText = [\n  `*${header}*`,\n  mode,\n  `Run \\`${runId}\\` · ${rows.length} job(s) · ${new Date().toISOString().replace('T',' ').slice(0,16)} UTC`,\n  '',\n  ...lines,\n  '',\n  `*Totals* — records scanned *${t.scanned}* · records cleaned *${t.cleaned}* · field fixes *${t.fieldsFixed}* · quality flags *${t.flagged}*`,\n  `*Duplicates* — pairs *${t.pairs}* · auto-merge *${t.autoMerged}* · awaiting approval *${t.pendingApproval}* · logged only *${t.lowConfidence}*`,\n  t.writeErrors ? `:warning: ${t.writeErrors} write error(s) — check the execution log.` : '',\n].filter(Boolean).join('\\n');\n\nreturn [{ json: { runId, totals: t, jobs: rows, digestText, hadErrors: t.failedJobs > 0 } }];\n"
+      },
+      "id": "8ad6e54d-2334-4e91-9d17-d999969dcaa0",
+      "name": "📊 Build Run Digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "=crm-hygiene",
+          "mode": "name"
+        },
+        "text": "={{ $json.digestText }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "mrkdwn": true
+        }
+      },
+      "id": "7d88c8cb-16ca-47b3-86a3-abe191533d27",
+      "name": "💬 Slack: Run Digest",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1200,
+        208
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "webhookId": "67928f81-f79a-4844-be18-b3f6e8ba0489",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nreturn [{ json: { ok: true, runId: $('📊 Build Run Digest').first().json.runId,\n                  totals: $('📊 Build Run Digest').first().json.totals } }];\n"
+      },
+      "id": "eb60d1c4-7d2e-4468-86d7-0d028bb5ca51",
+      "name": "🏁 Run Finished",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 00 · ORCHESTRATOR — start here\nSingle entry point for the whole CRM Hygiene & Deduplication system.\n\n**Before your first run**\n1. Import workflows 10 / 20 / 30 / 40 / 99 as well.\n2. Open each `Execute Workflow` node here and pick the real sub-workflow.\n3. Set the HubSpot + Slack credentials once per workflow.\n4. Create the 5 custom HubSpot properties (see SETUP-GUIDE.md).\n\n**`dryRun` ships as TRUE.** Nothing is written to HubSpot until you\nflip it to false in ⚙️ Global Config. Always do one dry run first.",
+        "height": 250,
+        "width": 520,
+        "color": 3
+      },
+      "id": "d630fece-de5b-4f23-835c-3776d5380f4d",
+      "name": "note-0",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### ⚙️ Global Config\nEvery tunable in the system lives here and is passed down to all\nsub-workflows — never hard-code values inside the sub-workflows.\n\n`autoMergeThreshold 95` = only an exact normalised-email (or exact\ndomain) match merges without a human.\n`reviewThreshold 72` = goes to Slack for approval.\n`logThreshold 55` = reported only, never touched.",
+        "height": 300,
+        "width": 300,
+        "color": 5
+      },
+      "id": "c46d0c3e-f36b-4ded-b5a9-0647614c0643",
+      "name": "note-1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        288,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Why jobs run one at a time\nBatch size 1 keeps you inside HubSpot's rate limit (100 req / 10s on a\nprivate app) and makes the execution log readable when a client asks\n\"what did it do to my database?\".\n\nHygiene always runs before dedup — normalising emails and domains\nfirst is what makes the duplicate scoring accurate.",
+        "height": 200,
+        "width": 420,
+        "color": 6
+      },
+      "id": "9f9332a1-237f-41d6-a06a-3173ed214d17",
+      "name": "note-2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        736,
+        752
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "⏰ Daily Schedule": {
+      "main": [
+        [
+          {
+            "node": "⚙️ Global Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "▶ Manual Run": {
+      "main": [
+        [
+          {
+            "node": "⚙️ Global Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ Global Config": {
+      "main": [
+        [
+          {
+            "node": "🧱 Build Job Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧱 Build Job Queue": {
+      "main": [
+        [
+          {
+            "node": "🔁 Run Jobs Sequentially",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔁 Run Jobs Sequentially": {
+      "main": [
+        [
+          {
+            "node": "📊 Build Run Digest",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "↔️ Hygiene or Dedup?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "↔️ Hygiene or Dedup?": {
+      "main": [
+        [
+          {
+            "node": "🧼 Run Hygiene Engine",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🔍 Run Duplicate Detector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧼 Run Hygiene Engine": {
+      "main": [
+        [
+          {
+            "node": "📥 Collect Job Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "📥 Collect Job Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔍 Run Duplicate Detector": {
+      "main": [
+        [
+          {
+            "node": "📥 Collect Job Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "📥 Collect Job Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📥 Collect Job Result": {
+      "main": [
+        [
+          {
+            "node": "🔁 Run Jobs Sequentially",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Build Run Digest": {
+      "main": [
+        [
+          {
+            "node": "💬 Slack: Run Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💬 Slack: Run Digest": {
+      "main": [
+        [
+          {
+            "node": "🏁 Run Finished",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "5NW7c3z1wGIWAJEP",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "cff69181-c806-4fcc-93a9-b3baa48a3f4d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1acf1a17190ae9324a4540c4eee2df728e672b0c691037ef51e222bc93ed61b0"
+  },
+  "nodeGroups": [],
+  "id": "b3r5pnijr1siFkS2",
+  "tags": [
+    {
+      "updatedAt": "2026-09-19T11:21:40.334Z",
+      "createdAt": "2026-09-19T11:21:40.334Z",
+      "id": "zEyiyCfx0TtGmUCR",
+      "name": "CRM Hygiene & Dedup"
+    }
+  ]
+}

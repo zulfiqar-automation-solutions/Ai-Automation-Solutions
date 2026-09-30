@@ -1,0 +1,668 @@
+{
+  "name": "CRM Hygiene & Dedup — 04 Merge Executor (Sub)",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "f1af5810-976b-4e2d-a669-3c375fe1bdba",
+      "name": "▶ Called with One Pair",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        48,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// Hard gate #1: refuse anything that does not look like a well-formed merge op.\nconst j = $input.first().json || {};\nconst need = ['objectType', 'primaryId', 'secondaryId'];\nconst missing = need.filter(k => !j[k]);\nif (missing.length) throw new Error(`Merge payload is missing: ${missing.join(', ')}`);\nif (!['contacts','companies','deals'].includes(String(j.objectType)))\n  throw new Error(`Unsupported objectType \"${j.objectType}\"`);\nif (String(j.primaryId) === String(j.secondaryId))\n  throw new Error(`Refusing to merge record ${j.primaryId} into itself`);\nif (!/^\\d+$/.test(String(j.primaryId)) || !/^\\d+$/.test(String(j.secondaryId)))\n  throw new Error('HubSpot object IDs must be numeric');\n\nconst cfg = j.config || {};\nconst READ = {\n  contacts: ['email','firstname','lastname','phone','mobilephone','company','createdate',\n             'lastmodifieddate','hs_merged_object_ids','dedupe_status','dedupe_merged_from'],\n  companies:['name','domain','website','phone','country','createdate','hs_lastmodifieddate',\n             'hs_merged_object_ids','dedupe_status','dedupe_merged_from'],\n  deals:    ['dealname','amount','closedate','dealstage','pipeline','createdate',\n             'hs_lastmodifieddate','hs_merged_object_ids','dedupe_status','dedupe_merged_from'],\n};\n\nreturn [{ json: {\n  ...j,\n  primaryId: String(j.primaryId),\n  secondaryId: String(j.secondaryId),\n  readProps: READ[j.objectType],\n  dryRun: j.dryRun !== false && cfg.dryRun !== false,\n  approvedBy: j.approvedBy || null,\n  slackChannel: cfg.slackChannel || '#crm-hygiene',\n  startedAt: new Date().toISOString(),\n} }];\n"
+      },
+      "id": "13cd6f41-cceb-4358-84f4-5f7e04631919",
+      "name": "🛡️ Validate Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        288,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c0",
+              "leftValue": "={{ $json.dryRun }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "98c3874c-7d5c-4858-87ca-d703cfbb81c8",
+      "name": "🧪 Dry Run?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        528,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst j = $input.first().json;\nreturn [{ json: {\n  ok: true, outcome: 'dry_run',\n  detail: `DRY RUN — would merge ${j.objectType} ${j.secondaryId} → ${j.primaryId} (score ${j.score ?? 'n/a'})`,\n  merged: false, primaryId: j.primaryId, secondaryId: j.secondaryId,\n} }];\n"
+      },
+      "id": "bb152e58-e72f-4a9d-bcb9-eee20642c8ff",
+      "name": "📋 Dry-Run Receipt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        768,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.hubapi.com/crm/v3/objects/' + $json.objectType + '/batch/read' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: $json.readProps, inputs: [{ id: $json.primaryId }, { id: $json.secondaryId }] }) }}",
+        "options": {
+          "response": {
+            "response": {}
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "5df2e978-300b-49fd-93d6-16ba4c7055bb",
+      "name": "HubSpot: Re-read Both Records",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        768,
+        624
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst j = $('🛡️ Validate Payload').first().json;\nconst e = $input.first().json || {};\nreturn [{ json: { ok:false, outcome:'failed', merged:false,\n  primaryId:j.primaryId, secondaryId:j.secondaryId, objectType:j.objectType,\n  blockReason:'Could not re-read the records before merging',\n  detail:String(e.error?.message || e.message || JSON.stringify(e)).slice(0,500),\n  alertText:`:x: *Merge aborted — could not re-read records*\\n${j.objectType} ${j.secondaryId} → ${j.primaryId}\\n\\`\\`\\`${String(e.error?.message || e.message).slice(0,300)}\\`\\`\\`` } }];\n"
+      },
+      "id": "1ee2a449-e33a-4935-af48-13458372aaa7",
+      "name": "🩹 Re-read Failed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        768,
+        864
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// ============================================================================\n//  CRM HYGIENE LIB v1.0  —  pure functions, no side effects, no dependencies\n// ============================================================================\nconst FREE_MAIL = new Set(['gmail.com','googlemail.com','yahoo.com','yahoo.co.uk','yahoo.co.in',\n  'hotmail.com','hotmail.co.uk','outlook.com','live.com','msn.com','aol.com','icloud.com','me.com',\n  'mac.com','protonmail.com','proton.me','gmx.com','gmx.de','mail.com','yandex.com','yandex.ru',\n  'zoho.com','qq.com','163.com','126.com','naver.com','rediffmail.com','web.de','comcast.net']);\n\nconst DISPOSABLE = ['mailinator.com','tempmail','10minutemail','guerrillamail','yopmail',\n  'throwawaymail','sharklasers','getnada','trashmail','dispostable','maildrop','fakeinbox',\n  'temp-mail','mailnesia','moakt','emailondeck','spamgourmet','mytemp.email','burnermail'];\n\nconst ROLE_LOCAL = new Set(['info','sales','support','admin','contact','hello','help','office',\n  'team','billing','accounts','accounting','noreply','no-reply','donotreply','marketing','hr',\n  'jobs','careers','webmaster','postmaster','enquiries','inquiries','service','services','mail',\n  'general','press','media','legal','finance','orders','shop','bookings','reservations']);\n\nconst DIAL = {AE:'971',AR:'54',AT:'43',AU:'61',BD:'880',BE:'32',BH:'973',BR:'55',CA:'1',CH:'41',\n  CL:'56',CN:'86',CO:'57',CZ:'420',DE:'49',DK:'45',EG:'20',ES:'34',FI:'358',FR:'33',GB:'44',\n  GR:'30',HK:'852',HU:'36',ID:'62',IE:'353',IL:'972',IN:'91',IQ:'964',IT:'39',JO:'962',JP:'81',\n  KE:'254',KR:'82',KW:'965',LB:'961',LK:'94',MA:'212',MX:'52',MY:'60',NG:'234',NL:'31',NO:'47',\n  NZ:'64',OM:'968',PH:'63',PK:'92',PL:'48',PT:'351',QA:'974',RO:'40',RU:'7',SA:'966',SE:'46',\n  SG:'65',TH:'66',TR:'90',TW:'886',UA:'380',US:'1',VN:'84',ZA:'27'};\n\nconst COUNTRY = {'united states':'US','united states of america':'US','usa':'US','u.s.a.':'US',\n  'u.s.':'US','america':'US','united kingdom':'GB','uk':'GB','u.k.':'GB','great britain':'GB',\n  'england':'GB','scotland':'GB','wales':'GB','britain':'GB','canada':'CA','australia':'AU',\n  'new zealand':'NZ','india':'IN','pakistan':'PK','bangladesh':'BD','sri lanka':'LK',\n  'saudi arabia':'SA','ksa':'SA','kingdom of saudi arabia':'SA','united arab emirates':'AE',\n  'uae':'AE','u.a.e.':'AE','qatar':'QA','kuwait':'KW','bahrain':'BH','oman':'OM','jordan':'JO',\n  'lebanon':'LB','iraq':'IQ','egypt':'EG','morocco':'MA','nigeria':'NG','kenya':'KE',\n  'south africa':'ZA','germany':'DE','deutschland':'DE','france':'FR','spain':'ES','espana':'ES',\n  'españa':'ES','italy':'IT','italia':'IT','portugal':'PT','netherlands':'NL','holland':'NL',\n  'belgium':'BE','switzerland':'CH','austria':'AT','sweden':'SE','norway':'NO','denmark':'DK',\n  'finland':'FI','ireland':'IE','poland':'PL','czech republic':'CZ','czechia':'CZ','hungary':'HU',\n  'romania':'RO','greece':'GR','ukraine':'UA','russia':'RU','russian federation':'RU',\n  'turkey':'TR','turkiye':'TR','türkiye':'TR','israel':'IL','china':'CN','japan':'JP',\n  'south korea':'KR','korea, republic of':'KR','republic of korea':'KR','taiwan':'TW',\n  'hong kong':'HK','singapore':'SG','malaysia':'MY','indonesia':'ID','thailand':'TH',\n  'vietnam':'VN','viet nam':'VN','philippines':'PH','brazil':'BR','brasil':'BR','mexico':'MX',\n  'méxico':'MX','argentina':'AR','chile':'CL','colombia':'CO'};\n\nconst US_STATE = {'alabama':'AL','alaska':'AK','arizona':'AZ','arkansas':'AR','california':'CA',\n  'colorado':'CO','connecticut':'CT','delaware':'DE','district of columbia':'DC','florida':'FL',\n  'georgia':'GA','hawaii':'HI','idaho':'ID','illinois':'IL','indiana':'IN','iowa':'IA',\n  'kansas':'KS','kentucky':'KY','louisiana':'LA','maine':'ME','maryland':'MD',\n  'massachusetts':'MA','michigan':'MI','minnesota':'MN','mississippi':'MS','missouri':'MO',\n  'montana':'MT','nebraska':'NE','nevada':'NV','new hampshire':'NH','new jersey':'NJ',\n  'new mexico':'NM','new york':'NY','north carolina':'NC','north dakota':'ND','ohio':'OH',\n  'oklahoma':'OK','oregon':'OR','pennsylvania':'PA','rhode island':'RI','south carolina':'SC',\n  'south dakota':'SD','tennessee':'TN','texas':'TX','utah':'UT','vermont':'VT','virginia':'VA',\n  'washington':'WA','west virginia':'WV','wisconsin':'WI','wyoming':'WY',\n  'ontario':'ON','quebec':'QC','québec':'QC','british columbia':'BC','alberta':'AB',\n  'manitoba':'MB','saskatchewan':'SK','nova scotia':'NS','new brunswick':'NB',\n  'newfoundland and labrador':'NL','prince edward island':'PE'};\n\nconst LEGAL_SUFFIX = new Set(['inc','inc.','incorporated','llc','l.l.c','l.l.c.','ltd','ltd.',\n  'limited','corp','corp.','corporation','co','co.','company','gmbh','mbh','ag','bv','b.v.','nv',\n  'n.v.','ab','oy','oyj','as','a/s','sa','s.a.','sas','s.a.s.','sarl','s.a.r.l.','srl','s.r.l.',\n  'spa','s.p.a.','pty','plc','p.l.c.','llp','l.l.p.','lp','pvt','pvt.','private','kk','k.k.',\n  'kg','ug','doo','d.o.o.','sp','zoo','z.o.o.','pte','sdn','bhd','cv','ou','sro','s.r.o.']);\n\nconst ACRONYMS = new Set(['CEO','CTO','CFO','COO','CMO','CIO','CISO','CRO','CPO','VP','SVP','EVP',\n  'AVP','IT','HR','PR','QA','UX','UI','SEO','SEM','SMB','B2B','B2C','SaaS','AI','ML','R&D','PM',\n  'BD','GM','MD','PhD','MBA','CPA','RN','MD.','US','USA','UK','UAE','EMEA','APAC','LATAM','NA',\n  'II','III','IV','SDR','BDR','AE','CSM','DevOps','API','ERP','CRM','SQL','AWS','GCP']);\n\nconst SMALL_WORDS = new Set(['of','and','the','for','in','on','at','to','a','an','or','&','de',\n  'da','van','von','der','den','la','le','du','di','el','al','bin','ibn']);\n\nfunction s(v){ return (v === null || v === undefined) ? '' : String(v).trim(); }\nfunction blank(v){ return s(v) === '' || s(v).toLowerCase() === 'null'; }\nfunction collapse(v){ return s(v).replace(/[\\s ]+/g, ' ').trim(); }\n\n// ---- EMAIL ----------------------------------------------------------------\nconst EMAIL_RE = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;\n\nfunction cleanEmail(raw){\n  const out = {clean:'', norm:'', domain:'', local:'', valid:false, flags:[]};\n  let e = s(raw).toLowerCase().replace(/[\\s​]/g,'').replace(/^mailto:/,'');\n  e = e.replace(/^[<(\"']+/,'').replace(/[>)\"'.,;]+$/,'');\n  if (!e) return out;\n  const at = e.lastIndexOf('@');\n  if (at < 1 || at === e.length-1){ out.clean=e; out.flags.push('email_malformed'); return out; }\n  let local = e.slice(0,at), domain = e.slice(at+1);\n  if (domain.endsWith('.')) domain = domain.slice(0,-1);\n  // common typo fixes on the TLD only (conservative)\n  const TYPO = {'gmail.co':'gmail.com','gmial.com':'gmail.com','gmai.com':'gmail.com',\n    'gmail.con':'gmail.com','hotmial.com':'hotmail.com','yahho.com':'yahoo.com',\n    'outlok.com':'outlook.com','hotmail.con':'hotmail.com','yahoo.con':'yahoo.com'};\n  if (TYPO[domain]){ out.flags.push('email_typo_fixed:'+domain); domain = TYPO[domain]; }\n  out.clean  = local + '@' + domain;\n  out.local  = local;\n  out.domain = domain;\n  out.valid  = EMAIL_RE.test(out.clean) && domain.includes('.');\n  if (!out.valid) out.flags.push('email_invalid_syntax');\n  // normalised form used ONLY for duplicate matching, never written back\n  let nl = local;\n  if (domain === 'gmail.com' || domain === 'googlemail.com'){\n    nl = nl.split('+')[0].replace(/\\./g,'');\n  } else {\n    nl = nl.split('+')[0];\n  }\n  out.norm = out.valid ? (nl + '@' + (domain === 'googlemail.com' ? 'gmail.com' : domain)) : '';\n  const base = local.split('+')[0].replace(/[._-]/g,'');\n  if (ROLE_LOCAL.has(local.split('+')[0]) || ROLE_LOCAL.has(base)) out.flags.push('role_address');\n  if (DISPOSABLE.some(d => domain.includes(d))) out.flags.push('disposable_domain');\n  if (FREE_MAIL.has(domain)) out.flags.push('free_mail_domain');\n  if (/^(test|asdf|qwerty|aaa|xxx|abc|none|na|n\\/a|noemail)/.test(local)) out.flags.push('email_looks_fake');\n  return out;\n}\n\n// ---- PHONE ----------------------------------------------------------------\nfunction cleanPhone(raw, defaultCountry){\n  const out = {e164:'', clean:'', valid:false, flags:[]};\n  let p = s(raw);\n  if (!p) return out;\n  const ext = p.match(/(?:ext|x|extension|#)\\s*\\.?\\s*(\\d{1,6})\\s*$/i);\n  if (ext){ out.ext = ext[1]; p = p.slice(0, ext.index); }\n  let plus = /^\\s*\\+/.test(p) || /^\\s*00\\d/.test(p);\n  let digits = p.replace(/\\D/g,'');\n  if (!digits){ out.flags.push('phone_no_digits'); return out; }\n  if (/^00/.test(p.replace(/\\D/g,'').slice(0,2)) && /^\\s*00/.test(p.trim())){\n    digits = digits.replace(/^00/,''); plus = true;\n  }\n  const cc = DIAL[s(defaultCountry).toUpperCase()] || '';\n  if (!plus){\n    // national format -> prepend the default country dial code\n    if (cc === '1' && digits.length === 11 && digits.startsWith('1')) { /* already 1NXXXXXXXXX */ }\n    else if (cc && digits.length <= 11){\n      digits = digits.replace(/^0+/, '');            // strip national trunk prefix\n      if (!digits.startsWith(cc)) digits = cc + digits;\n    } else if (!cc){\n      out.flags.push('phone_no_country_context');\n    }\n  }\n  if (digits.length < 8 || digits.length > 15){\n    out.flags.push('phone_invalid_length');\n    out.clean = '+' + digits;\n    return out;\n  }\n  if (/^(\\d)\\1+$/.test(digits) || /^(?:0123456789|1234567890)/.test(digits)){\n    out.flags.push('phone_looks_fake');\n  }\n  out.e164  = '+' + digits;\n  out.clean = out.e164;\n  out.valid = out.flags.length === 0;\n  return out;\n}\n\n// ---- NAMES / CASING -------------------------------------------------------\nfunction titleCaseWord(w){\n  if (!w) return w;\n  const upper = w.toUpperCase().replace(/[^A-Z&./]/g,'');\n  if (ACRONYMS.has(w.toUpperCase()) || ACRONYMS.has(upper)) return w.toUpperCase();\n  if (/\\d/.test(w)) return w;                                   // keep 3M, H2O, 24/7\n  let t = w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();\n  t = t.replace(/^(mc)([a-z])/i,  (m,a,b)=> 'Mc' + b.toUpperCase());\n  t = t.replace(/^(mac)([a-z]{2})/i,(m,a,b)=> 'Mac'+ b.charAt(0).toUpperCase()+b.slice(1));\n  t = t.replace(/^(o')([a-z])/i,  (m,a,b)=> \"O'\" + b.toUpperCase());\n  t = t.replace(/^(d')([a-z])/i,  (m,a,b)=> \"d'\" + b.toUpperCase());\n  t = t.replace(/-([a-z])/g,      (m,b)  => '-'  + b.toUpperCase());\n  return t;\n}\n\nfunction smartCase(raw, opts){\n  const o = opts || {};\n  let v = collapse(raw);\n  if (!v) return '';\n  const isAllCaps = v === v.toUpperCase() && /[A-Z]{2,}/.test(v);\n  const isAllLower = v === v.toLowerCase() && /[a-z]{2,}/.test(v);\n  if (!o.force && !isAllCaps && !isAllLower) return v;   // respect deliberate casing\n  const words = v.split(' ');\n  return words.map((w,i) => {\n    const lw = w.toLowerCase();\n    if (i > 0 && SMALL_WORDS.has(lw) && !o.keepSmall) return lw;\n    return titleCaseWord(w);\n  }).join(' ');\n}\n\nfunction cleanPersonName(raw){\n  let v = collapse(raw).replace(/[\",;]+/g,' ').replace(/\\s+/g,' ').trim();\n  v = v.replace(/^(mr|mrs|ms|miss|dr|prof|eng|sir)\\.?\\s+/i, '');\n  if (!v) return {clean:'', flags:[]};\n  const flags = [];\n  if (/^[^A-Za-zÀ-ɏ؀-ۿ]+$/.test(v)) flags.push('name_not_alphabetic');\n  if (/(test|asdf|qwerty|unknown|n\\/a|none|xxx)/i.test(v) && v.length <= 8) flags.push('name_looks_fake');\n  if (/https?:\\/\\/|www\\.|@/.test(v)) flags.push('name_contains_url_or_email');\n  return {clean: smartCase(v), flags};\n}\n\n// ---- COMPANY --------------------------------------------------------------\nfunction normCompany(raw){\n  let v = collapse(raw).toLowerCase();\n  if (!v) return '';\n  v = v.replace(/[‘’“”]/g,\"'\").replace(/&/g,' and ');\n  v = v.replace(/[.,;:()\\[\\]\\/\\\\'\"`]/g,' ').replace(/\\s+/g,' ').trim();\n  let toks = v.split(' ').filter(Boolean);\n  while (toks.length > 1 && LEGAL_SUFFIX.has(toks[toks.length-1])) toks.pop();\n  toks = toks.filter(t => !LEGAL_SUFFIX.has(t) || toks.length === 1);\n  return toks.join(' ').trim();\n}\n\nfunction cleanCompanyName(raw){\n  const v = collapse(raw).replace(/[\",;]+$/,'').trim();\n  if (!v) return {clean:'', flags:[]};\n  const flags = [];\n  if (/^(unknown|n\\/a|none|test|asdf|-{1,})$/i.test(v)) flags.push('company_looks_fake');\n  return {clean: smartCase(v, {keepSmall:false}), flags};\n}\n\nfunction normDomain(raw){\n  let d = s(raw).toLowerCase().trim();\n  if (!d) return '';\n  d = d.replace(/^https?:\\/\\//,'').replace(/^www\\d?\\./,'').split('/')[0].split('?')[0]\n       .split('#')[0].split(':')[0].replace(/\\.$/,'');\n  if (!d.includes('.') || /\\s/.test(d)) return '';\n  return d;\n}\n\n// ---- GEO ------------------------------------------------------------------\nfunction normCountry(raw){\n  const v = collapse(raw);\n  if (!v) return {clean:'', iso:'', flags:[]};\n  const k = v.toLowerCase().replace(/\\./g,'').trim();\n  if (/^[A-Za-z]{2}$/.test(v) && Object.values(COUNTRY).includes(v.toUpperCase()))\n    return {clean:v.toUpperCase(), iso:v.toUpperCase(), flags:[]};\n  const iso = COUNTRY[k] || COUNTRY[k.replace(/^the /,'')] || '';\n  if (!iso) return {clean:v, iso:'', flags:['country_unmapped']};\n  return {clean:iso, iso, flags:[]};\n}\n\nfunction normState(raw, iso){\n  const v = collapse(raw);\n  if (!v) return {clean:'', flags:[]};\n  if (iso !== 'US' && iso !== 'CA') return {clean:v, flags:[]};\n  if (/^[A-Za-z]{2}$/.test(v)) return {clean:v.toUpperCase(), flags:[]};\n  const code = US_STATE[v.toLowerCase()];\n  return code ? {clean:code, flags:[]} : {clean:v, flags:['state_unmapped']};\n}\n\n// ---- SCORING --------------------------------------------------------------\nfunction completeness(props, weights){\n  let got = 0, total = 0;\n  const missing = [];\n  for (const [f, w] of Object.entries(weights)){\n    total += w;\n    if (!blank(props[f])) got += w; else missing.push(f);\n  }\n  return {score: total ? Math.round((got/total)*100) : 0, missing};\n}\n\nfunction pick(obj, keys){ const o = {}; for (const k of keys) if (k in obj) o[k] = obj[k]; return o; }\nfunction uniq(a){ return Array.from(new Set(a.filter(Boolean))); }\nfunction dayDiff(a, b){\n  const x = Date.parse(a), y = Date.parse(b);\n  if (isNaN(x) || isNaN(y)) return null;\n  return Math.abs(x - y) / 86400000;\n}\n// ============================ END LIB =======================================\n\n// ===========================================================================\n//  HARD GATE #2 — re-validate against LIVE HubSpot data, not the snapshot the\n//  detector scored minutes (or, after an approval, hours) ago.\n//  A HubSpot merge cannot be undone, so every check here fails CLOSED.\n// ===========================================================================\nconst job  = $('🛡️ Validate Payload').first().json;\nconst resp = $input.first().json || {};\nconst rows = resp.results || [];\n\nconst byId = new Map(rows.map(r => [String(r.id), r]));\nconst primary   = byId.get(job.primaryId);\nconst secondary = byId.get(job.secondaryId);\n\nconst blocks = [];\nif (!primary)   blocks.push(`Primary ${job.primaryId} no longer exists (deleted or already merged away).`);\nif (!secondary) blocks.push(`Secondary ${job.secondaryId} no longer exists (deleted or already merged away).`);\nif (resp.numErrors) blocks.push(`HubSpot returned ${resp.numErrors} read error(s).`);\n\nif (primary && secondary) {\n  const pp = primary.properties || {}, sp = secondary.properties || {};\n\n  if (primary.archived || secondary.archived) blocks.push('One of the records is archived.');\n\n  for (const [lbl, props] of [['primary', pp], ['secondary', sp]]) {\n    if (s(props.dedupe_status) === 'do_not_merge')\n      blocks.push(`The ${lbl} record is flagged do_not_merge.`);\n  }\n\n  const pm = s(pp.hs_merged_object_ids).split(';').map(x => x.trim());\n  const sm = s(sp.hs_merged_object_ids).split(';').map(x => x.trim());\n  if (pm.includes(job.secondaryId) || sm.includes(job.primaryId))\n    blocks.push('These two records have already been merged.');\n\n  // --- re-verify the evidence that justified an automatic merge ----------\n  if (job.tier === 'auto') {\n    if (job.objectType === 'contacts') {\n      const a = cleanEmail(pp.email).norm, b = cleanEmail(sp.email).norm;\n      if (!a || !b || a !== b)\n        blocks.push(`Auto-merge evidence no longer holds: emails are now \"${pp.email || '∅'}\" vs \"${sp.email || '∅'}\".`);\n    }\n    if (job.objectType === 'companies') {\n      const a = normDomain(pp.domain || pp.website), b = normDomain(sp.domain || sp.website);\n      if (!a || !b || a !== b)\n        blocks.push(`Auto-merge evidence no longer holds: domains are now \"${a || '∅'}\" vs \"${b || '∅'}\".`);\n    }\n    if (job.objectType === 'deals')\n      blocks.push('Deals are never auto-merged — this op should have gone to approval.');\n  }\n}\n\nconst label = (o) => {\n  const p = (o && o.properties) || {};\n  if (job.objectType === 'contacts')  return `${s(p.firstname)} ${s(p.lastname)}`.trim() || s(p.email) || job.primaryId;\n  if (job.objectType === 'companies') return s(p.name) || s(p.domain) || job.primaryId;\n  return s(p.dealname) || job.primaryId;\n};\n\nreturn [{ json: {\n  ...job,\n  safe: blocks.length === 0,\n  blocks,\n  blockReason: blocks.join(' '),\n  primaryLabel: label(primary),\n  secondaryLabel: label(secondary),\n  primaryMergedFrom: s(primary?.properties?.dedupe_merged_from),\n  alertText: blocks.length\n    ? `:no_entry: *Merge blocked by a safety check*\\n${job.objectType} \\`${job.secondaryId}\\` → \\`${job.primaryId}\\`\\n` +\n      blocks.map(b => `• ${b}`).join('\\n')\n    : '',\n} }];\n"
+      },
+      "id": "0d44f0c4-0845-4909-9f85-36d39f5cf957",
+      "name": "🛡️ Live Safety Pre-Checks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c0",
+              "leftValue": "={{ $json.safe }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "2f9f5368-0a68-4abc-9644-69c896b76d70",
+      "name": "✅ Safe to Merge?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1248,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "=crm-hygiene",
+          "mode": "name"
+        },
+        "text": "={{ $json.alertText }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "mrkdwn": true
+        }
+      },
+      "id": "533a1c02-b1a4-453f-891a-b4f85b19dfab",
+      "name": "💬 Slack: Merge Blocked",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1488,
+        864
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "webhookId": "a9d991a1-fec1-449c-b22e-67d301a77132",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst j = $('🛡️ Live Safety Pre-Checks').first().json;\nreturn [{ json: { ok:true, outcome:'blocked', merged:false,\n  primaryId:j.primaryId, secondaryId:j.secondaryId, objectType:j.objectType,\n  detail:j.blockReason } }];\n"
+      },
+      "id": "e8bc88f0-2142-4190-b2bc-de26f165c014",
+      "name": "🚫 Blocked Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1728,
+        864
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.hubapi.com/crm/v3/objects/' + $json.objectType + '/merge' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ primaryObjectId: $json.primaryId, objectIdToMerge: $json.secondaryId }) }}",
+        "options": {
+          "response": {
+            "response": {}
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "bd42629d-5038-4e1e-b0fb-72e0d22a6dda",
+      "name": "HubSpot: ⚠️ MERGE",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1488,
+        544
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst j = $('🛡️ Live Safety Pre-Checks').first().json;\nconst e = $input.first().json || {};\nconst raw = String(e.error?.message || e.message || JSON.stringify(e));\nconst code = Number(e.error?.httpCode || e.statusCode || 0);\n\nlet verdict = 'Merge did not happen — safe to retry after investigating.';\nlet needsHuman = false;\nif (/404|not ?found/i.test(raw)) verdict = 'One of the records disappeared between the safety check and the merge. Nothing was merged.';\nelse if (/409|conflict/i.test(raw)) verdict = 'HubSpot refused the merge (conflict). Usually the objects are in different portals or one is already merged.';\nelse if (/429|rate/i.test(raw)) verdict = 'Rate limited. Nothing was merged — it will be retried on the next run.';\nelse if (/401|403/i.test(raw)) { verdict = 'Credential/scope problem: the private app needs write scope on this object.'; needsHuman = true; }\nelse if (/timeout|ETIMEDOUT|ECONNRESET|socket hang up/i.test(raw)) {\n  verdict = 'The request timed out. HubSpot MAY have applied the merge — verify both records in HubSpot before retrying.';\n  needsHuman = true;\n}\n\nreturn [{ json: { ok:false, outcome:'failed', merged:false, needsHuman,\n  primaryId:j.primaryId, secondaryId:j.secondaryId, objectType:j.objectType,\n  detail:`${verdict} (${raw.slice(0,300)})`,\n  alertText:`${needsHuman ? ':rotating_light:' : ':warning:'} *Merge failed* — ${j.objectType} \\`${j.secondaryId}\\` → \\`${j.primaryId}\\`\\n${verdict}\\n\\`\\`\\`${raw.slice(0,400)}\\`\\`\\`` } }];\n"
+      },
+      "id": "4d3202ee-1f57-4a3a-97d4-9c5c410c083a",
+      "name": "🧨 Classify Merge Failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1728,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "=crm-hygiene",
+          "mode": "name"
+        },
+        "text": "={{ $json.alertText }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "mrkdwn": true
+        }
+      },
+      "id": "3416a428-cdab-41eb-ac7b-9c96d5219e18",
+      "name": "💬 Slack: Merge Failed",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1968,
+        352
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "webhookId": "ab7d7449-a735-4efa-aed2-93d2b28467fe",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nreturn [{ json: $('🧨 Classify Merge Failure').first().json }];\n"
+      },
+      "id": "4ef5a432-9d66-4b2f-bacb-45562b8057a3",
+      "name": "📤 Return Failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2208,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'https://api.hubapi.com/crm/v3/objects/' + $('🛡️ Live Safety Pre-Checks').first().json.objectType + '/' + $('🛡️ Live Safety Pre-Checks').first().json.primaryId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: { dedupe_status: 'merged', dedupe_merged_from: ([$('🛡️ Live Safety Pre-Checks').first().json.primaryMergedFrom, $('🛡️ Live Safety Pre-Checks').first().json.secondaryId].filter(Boolean).join(';')).slice(-900), hygiene_last_run: $now.toISO() } }) }}",
+        "options": {
+          "response": {
+            "response": {}
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "21437fee-e964-42f8-815c-0a2ceab1827b",
+      "name": "HubSpot: Stamp Audit Trail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1728,
+        544
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst j = $('🛡️ Live Safety Pre-Checks').first().json;\nconst merged = $('HubSpot: ⚠️ MERGE').first().json || {};\nconst who = j.approvedBy ? ` · approved by *${j.approvedBy}*` : ' · automatic (score 100)';\nconst url = `https://app.hubspot.com/contacts/0/${{contacts:'contact',companies:'company',deals:'deal'}[j.objectType]}/${j.primaryId}`;\n\nreturn [{ json: {\n  ok: true, outcome: 'merged', merged: true,\n  objectType: j.objectType, primaryId: j.primaryId, secondaryId: j.secondaryId,\n  survivingId: merged.id || j.primaryId,\n  score: j.score ?? null, reasons: j.reasons || [],\n  detail: `Merged ${j.objectType} ${j.secondaryId} (${j.secondaryLabel}) into ${j.primaryId} (${j.primaryLabel})`,\n  receiptText: [\n    `:white_check_mark: *Merged ${j.objectType.slice(0, -1)}*${who}`,\n    `*Kept:* <${url}|${j.primaryLabel}> \\`${j.primaryId}\\``,\n    `*Merged in:* ${j.secondaryLabel} \\`${j.secondaryId}\\``,\n    j.score ? `*Confidence:* ${j.score}/100 — ${(j.reasons || []).join('; ')}` : '',\n    `_HubSpot merges are irreversible. The surviving record now holds both timelines._`,\n  ].filter(Boolean).join('\\n'),\n} }];\n"
+      },
+      "id": "f7c09507-ffb4-4e16-936b-fda771cf80b4",
+      "name": "🧾 Merge Receipt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1968,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "=crm-hygiene",
+          "mode": "name"
+        },
+        "text": "={{ $json.receiptText }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "mrkdwn": true
+        }
+      },
+      "id": "68aec330-8454-46f8-93c2-a0aa817d4581",
+      "name": "💬 Slack: Merge Receipt",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        2144,
+        544
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "webhookId": "c631f8bd-4522-41f0-a2bc-577a6b41aa8a",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nreturn [{ json: $('🧾 Merge Receipt').first().json }];\n"
+      },
+      "id": "54da7064-994e-4dc7-8fb4-24e9bc56090d",
+      "name": "📤 Return Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2336,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 30 · MERGE EXECUTOR (sub-workflow)\nThe only workflow in this system that calls HubSpot's **irreversible**\n`/merge` endpoint. Everything about it fails closed.\n\n**Three gates before the merge**\n1. `🛡️ Validate Payload` — shape, numeric IDs, never merge a record into itself.\n2. `🧪 Dry Run?` — with `dryRun: true` it stops here and writes a receipt only.\n3. `🛡️ Live Safety Pre-Checks` — **re-reads both records from HubSpot** and\n   re-proves the evidence. After a Slack approval this may be hours later; the\n   data can have changed, a record can have been deleted, or the pair can\n   already be merged.\n\nCalled by **20 Duplicate Detector** (score 100) and by **40 Approval Gate**\n(after a human clicks approve).",
+        "height": 320,
+        "width": 560,
+        "color": 4
+      },
+      "id": "5d09e97b-6e43-4695-b708-33cbeb0c7e23",
+      "name": "note-0",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Why re-read instead of trusting the payload\nThe detector scored these records from a snapshot. Between then and now a rep\nmay have corrected an email, or another integration may have merged them\nalready. Merging on stale evidence is how a dedup workflow destroys a client's\nCRM — and there is no undo.\n\nThe `auto` tier is re-proved here: if the two emails (or domains) are no longer\nidentical, the merge is **blocked**, not downgraded.",
+        "height": 260,
+        "width": 420,
+        "color": 3
+      },
+      "id": "d115d53a-b295-49e1-84db-4f2bb790cd87",
+      "name": "note-1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1136,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Timeout is the dangerous failure\nIf `/merge` times out, HubSpot may still have applied it. That case is\nclassified `needsHuman` and escalated to Slack with an explicit\n\"verify before retrying\" instruction — never silently retried.",
+        "height": 150,
+        "width": 460,
+        "color": 2
+      },
+      "id": "80f9edc1-2cfe-47fa-b38c-cea3083728c3",
+      "name": "note-2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1616,
+        -96
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "▶ Called with One Pair": {
+      "main": [
+        [
+          {
+            "node": "🛡️ Validate Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🛡️ Validate Payload": {
+      "main": [
+        [
+          {
+            "node": "🧪 Dry Run?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧪 Dry Run?": {
+      "main": [
+        [
+          {
+            "node": "📋 Dry-Run Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HubSpot: Re-read Both Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Re-read Both Records": {
+      "main": [
+        [
+          {
+            "node": "🛡️ Live Safety Pre-Checks",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🩹 Re-read Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🩹 Re-read Failed": {
+      "main": [
+        [
+          {
+            "node": "💬 Slack: Merge Blocked",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🛡️ Live Safety Pre-Checks": {
+      "main": [
+        [
+          {
+            "node": "✅ Safe to Merge?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✅ Safe to Merge?": {
+      "main": [
+        [
+          {
+            "node": "HubSpot: ⚠️ MERGE",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "💬 Slack: Merge Blocked",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💬 Slack: Merge Blocked": {
+      "main": [
+        [
+          {
+            "node": "🚫 Blocked Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: ⚠️ MERGE": {
+      "main": [
+        [
+          {
+            "node": "HubSpot: Stamp Audit Trail",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🧨 Classify Merge Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧨 Classify Merge Failure": {
+      "main": [
+        [
+          {
+            "node": "💬 Slack: Merge Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💬 Slack: Merge Failed": {
+      "main": [
+        [
+          {
+            "node": "📤 Return Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Stamp Audit Trail": {
+      "main": [
+        [
+          {
+            "node": "🧾 Merge Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧾 Merge Receipt": {
+      "main": [
+        [
+          {
+            "node": "💬 Slack: Merge Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💬 Slack: Merge Receipt": {
+      "main": [
+        [
+          {
+            "node": "📤 Return Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "b267da80-e250-4116-b1fc-09f4a97de7a0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1acf1a17190ae9324a4540c4eee2df728e672b0c691037ef51e222bc93ed61b0"
+  },
+  "nodeGroups": [],
+  "id": "9f4r8bZArG9cRcwL",
+  "tags": [
+    {
+      "updatedAt": "2026-09-19T11:21:40.334Z",
+      "createdAt": "2026-09-19T11:21:40.334Z",
+      "id": "zEyiyCfx0TtGmUCR",
+      "name": "CRM Hygiene & Dedup"
+    }
+  ]
+}

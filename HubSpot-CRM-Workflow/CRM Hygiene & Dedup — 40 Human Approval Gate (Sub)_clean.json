@@ -1,0 +1,540 @@
+{
+  "name": "CRM Hygiene & Dedup — 03 Human Approval Gate (Sub)",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "e2e78274-1f42-479d-bf3f-5538727e2661",
+      "name": "▶ Called with One Pair",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        48,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// The card has to let a busy RevOps person decide in ~5 seconds without\n// opening HubSpot: what matched, how strong, which record survives, what is lost.\nconst j = $input.first().json || {};\nconst cfg = j.config || {};\nconst noun = { contacts: 'contact', companies: 'company', deals: 'deal' }[j.objectType] || 'record';\n\nconst bar = (n) => '█'.repeat(Math.round(n / 10)) + '░'.repeat(10 - Math.round(n / 10));\nconst fmtDate = (d) => d ? String(d).slice(0, 10) : '—';\n\nconst message = [\n  `:mag: *Possible duplicate ${noun}* — confidence *${j.score}/100*  \\`${bar(j.score)}\\``,\n  '',\n  `*Keep (primary)* → <${j.primaryUrl}|${j.primaryLabel}>  \\`${j.primaryId}\\``,\n  `   created ${fmtDate(j.primaryCreated)} · completeness ${j.primaryScore}/100`,\n  `*Merge in (will disappear)* → <${j.secondaryUrl}|${j.secondaryLabel}>  \\`${j.secondaryId}\\``,\n  `   created ${fmtDate(j.secondaryCreated)} · completeness ${j.secondaryScore}/100`,\n  '',\n  `*Why they matched*`,\n  ...(j.reasons || []).map(r => `   • ${r}`),\n  '',\n  `*Matched on:* \\`${JSON.stringify(j.matchKeys || {})}\\``,\n  '',\n  `:warning: *Approving is permanent.* HubSpot merges cannot be undone. The primary keeps its ID and properties; blank fields are filled from the secondary, and both timelines combine.`,\n  `:no_entry_sign: Choosing *Not a duplicate* records the pair so it is never proposed again.`,\n  cfg.dryRun ? '\\n:test_tube: _Dry run is ON — approving will log the decision but change nothing in HubSpot._' : '',\n].filter(Boolean).join('\\n');\n\nreturn [{ json: { ...j, noun, message,\n  slackChannel: cfg.slackChannel || '#crm-hygiene' } }];\n"
+      },
+      "id": "d0e21fca-5c69-4e61-8d4c-cc421883e3cc",
+      "name": "🎫 Build Approval Card",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        288,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "sendAndWait",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $json.slackChannel }}",
+          "mode": "name"
+        },
+        "message": "={{ $json.message }}",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "approveLabel": "✅ Approve merge",
+            "disapproveLabel": "🚫 Not a duplicate",
+            "buttonDisapprovalStyle": "danger"
+          }
+        },
+        "options": {}
+      },
+      "id": "effe9167-9dee-48b8-ae34-1a3986069990",
+      "name": "💬 Slack: Approve This Merge?",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        528,
+        528
+      ],
+      "webhookId": "7907b0c3-3e96-4635-a445-28b20a28be79",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// 24h with no answer: leave the records untouched and say so. The pair will be\n// proposed again on the next run — silence is never treated as consent.\nconst j = $('🎫 Build Approval Card').first().json;\nreturn [{ json: {\n  ok: true, outcome: 'approval_timeout', merged: false,\n  primaryId: j.primaryId, secondaryId: j.secondaryId,\n  detail: 'No answer within 24h — nothing was merged; the pair will be re-proposed on the next run.',\n  noticeText: `:hourglass_flowing_sand: *Duplicate review expired* — no answer in 24h for ${j.noun} \\`${j.secondaryId}\\` → \\`${j.primaryId}\\`. Nothing was changed; it will come back on the next run.`,\n  slackChannel: j.slackChannel,\n} }];\n"
+      },
+      "id": "b0f6799d-0908-4f09-a31a-fe4122afa02a",
+      "name": "⌛ Approval Timed Out",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $json.slackChannel }}",
+          "mode": "name"
+        },
+        "text": "={{ $json.noticeText }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "mrkdwn": true
+        }
+      },
+      "id": "b8ae0b17-9831-4a9c-af9f-a79f7487f653",
+      "name": "💬 Slack: Review Expired",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        752,
+        848
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "webhookId": "c19bb2e0-dbed-40aa-8d12-454b97d874c4",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c0",
+              "leftValue": "={{ $json.data.approved }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "979236e0-ae30-4380-aa11-b85ec855f8b0",
+      "name": "✅ Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        768,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst j = $('🎫 Build Approval Card').first().json;\nconst r = $input.first().json || {};\nreturn [{ json: { ...j,\n  approvedBy: r.data?.user?.name || r.data?.user?.id || 'Slack approver',\n  approvedAt: new Date().toISOString() } }];\n"
+      },
+      "id": "a8a4e413-67ed-423e-bab8-0607a7482b1c",
+      "name": "🖇️ Attach Approval Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "9f4r8bZArG9cRcwL"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "id": "2cdcfe33-0f6f-4a66-b574-fb0ef5e92455",
+      "name": "🔗 Execute Merge (WF-30)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1248,
+        400
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst j = $input.first().json || {};\nconst ctx = $('🖇️ Attach Approval Context').first().json;\nreturn [{ json: {\n  ok: !j.error,\n  outcome: j.error ? 'failed' : (j.outcome || 'merged'),\n  merged: Boolean(j.merged),\n  primaryId: ctx.primaryId, secondaryId: ctx.secondaryId,\n  approvedBy: ctx.approvedBy,\n  detail: j.error ? String(j.error.message || j.error) : (j.detail || null),\n} }];\n"
+      },
+      "id": "365f8f7e-a8af-4f61-8cb3-0c5746b9f97d",
+      "name": "📤 Return Approved Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1488,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.hubapi.com/crm/v3/objects/' + $('🎫 Build Approval Card').first().json.objectType + '/batch/update' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ inputs: [ { id: $('🎫 Build Approval Card').first().json.primaryId,   properties: { dedupe_status: 'reviewed_not_duplicate',     dedupe_ignore_pairs: [$('🎫 Build Approval Card').first().json.primaryIgnore,       $('🎫 Build Approval Card').first().json.secondaryId]       .filter(Boolean).join(';').slice(-900) } }, { id: $('🎫 Build Approval Card').first().json.secondaryId,   properties: { dedupe_status: 'reviewed_not_duplicate',     dedupe_ignore_pairs: [$('🎫 Build Approval Card').first().json.secondaryIgnore,       $('🎫 Build Approval Card').first().json.primaryId]       .filter(Boolean).join(';').slice(-900) } }] }) }}",
+        "options": {
+          "response": {
+            "response": {}
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "dfc15dd5-301b-4401-845b-84c3f17256f3",
+      "name": "HubSpot: Record 'Not a Duplicate'",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1008,
+        608
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst j = $('🎫 Build Approval Card').first().json;\nconst r = $('💬 Slack: Approve This Merge?').first().json || {};\nconst who = r.data?.user?.name || r.data?.user?.id || 'a reviewer';\nconst failed = Boolean($input.first().json?.error);\n\nreturn [{ json: {\n  ok: true, outcome: 'rejected', merged: false,\n  primaryId: j.primaryId, secondaryId: j.secondaryId,\n  detail: `Marked \"not a duplicate\" by ${who}` + (failed ? ' (but the HubSpot tag write failed — the pair may reappear)' : ''),\n  noticeText: `:no_entry_sign: *Not a duplicate* — ${who} rejected ${j.noun} \\`${j.secondaryId}\\` ⟷ \\`${j.primaryId}\\`. ` +\n    (failed ? ':warning: The HubSpot tag write failed, so this pair may be proposed again.'\n            : 'Both records are tagged and this pair will not be proposed again.'),\n  slackChannel: j.slackChannel,\n} }];\n"
+      },
+      "id": "db5f56dd-9ecc-4b60-a51b-1b6e6ed5fe71",
+      "name": "🗂️ Rejection Logged",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $json.slackChannel }}"
+        },
+        "text": "={{ $json.noticeText }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "mrkdwn": true
+        }
+      },
+      "id": "6095d52c-8614-49a6-a52e-e297ca8f5a37",
+      "name": "💬 Slack: Rejection Logged",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1488,
+        640
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "webhookId": "d1dbcdcd-4a07-4d23-9be7-0154ca8bfc95",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst j = $('🗂️ Rejection Logged').first().json;\nreturn [{ json: { ok:true, outcome:'rejected', merged:false,\n  primaryId:j.primaryId, secondaryId:j.secondaryId, detail:j.detail } }];\n"
+      },
+      "id": "25974366-07df-490f-b86a-c93bb78e80d8",
+      "name": "📤 Return Rejected Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1728,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst j = $('⌛ Approval Timed Out').first().json;\nreturn [{ json: { ok:true, outcome:'approval_timeout', merged:false,\n  primaryId:j.primaryId, secondaryId:j.secondaryId, detail:j.detail } }];\n"
+      },
+      "id": "3ae2c6c5-767e-449d-898d-0bb9df691079",
+      "name": "📤 Return Timeout Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 40 · HUMAN APPROVAL GATE (sub-workflow)\nHandles every pair scoring between `reviewThreshold` (72) and\n`autoMergeThreshold` (95) — the band where a machine should not decide alone.\n\n**Called fire-and-forget.** Workflow 20 invokes this with\n*Wait For Sub-Workflow = OFF*, so the nightly scan finishes in minutes while\napprovals sit in Slack for up to 24 hours.\n\n**Requires n8n ≥ 1.74** for the Slack *Send and Wait for Approval* operation,\nand the Slack app needs `chat:write` plus an enabled Interactivity request URL\npointing at your n8n instance. If your n8n is older, swap this node for a\nSlack message with Block Kit buttons + a Wait-on-webhook node.",
+        "height": 340,
+        "width": 540,
+        "color": 4
+      },
+      "id": "81ac09fa-2463-4c67-bd5a-067508dd6c6b",
+      "name": "note-0",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Silence is never consent\nIf nobody answers within 24 hours the node times out, the error branch fires,\n**nothing is merged**, and the pair is simply re-proposed on the next run.\n\nA duplicate that survives one more night costs nothing. A wrong merge costs\na client.",
+        "height": 200,
+        "width": 480,
+        "color": 2
+      },
+      "id": "d708cbe2-5801-4168-ab26-4a1b87fa31a0",
+      "name": "note-1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -16,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### \"Not a duplicate\" is remembered\nRejecting writes `dedupe_status = reviewed_not_duplicate` **and appends the\nother record's ID to `dedupe_ignore_pairs` on both records**. Workflow 20 skips\nany pair where either side lists the other.\n\nWithout this, every rejected pair comes back tomorrow night and the client\nstops trusting the alerts within a week.",
+        "height": 220,
+        "width": 520,
+        "color": 5
+      },
+      "id": "b0a28557-2fdb-4b49-8023-72b73ae4058c",
+      "name": "note-2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        992,
+        144
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "▶ Called with One Pair": {
+      "main": [
+        [
+          {
+            "node": "🎫 Build Approval Card",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🎫 Build Approval Card": {
+      "main": [
+        [
+          {
+            "node": "💬 Slack: Approve This Merge?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💬 Slack: Approve This Merge?": {
+      "main": [
+        [
+          {
+            "node": "✅ Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "⌛ Approval Timed Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⌛ Approval Timed Out": {
+      "main": [
+        [
+          {
+            "node": "💬 Slack: Review Expired",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💬 Slack: Review Expired": {
+      "main": [
+        [
+          {
+            "node": "📤 Return Timeout Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✅ Approved?": {
+      "main": [
+        [
+          {
+            "node": "🖇️ Attach Approval Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HubSpot: Record 'Not a Duplicate'",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🖇️ Attach Approval Context": {
+      "main": [
+        [
+          {
+            "node": "🔗 Execute Merge (WF-30)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔗 Execute Merge (WF-30)": {
+      "main": [
+        [
+          {
+            "node": "📤 Return Approved Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "📤 Return Approved Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Record 'Not a Duplicate'": {
+      "main": [
+        [
+          {
+            "node": "🗂️ Rejection Logged",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🗂️ Rejection Logged",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🗂️ Rejection Logged": {
+      "main": [
+        [
+          {
+            "node": "💬 Slack: Rejection Logged",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💬 Slack: Rejection Logged": {
+      "main": [
+        [
+          {
+            "node": "📤 Return Rejected Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "5NW7c3z1wGIWAJEP",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "2d0e7a27-7844-4a4f-aa72-e0fc5c7e25bb",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1acf1a17190ae9324a4540c4eee2df728e672b0c691037ef51e222bc93ed61b0"
+  },
+  "nodeGroups": [],
+  "id": "fEep6KtA6iBB84ke",
+  "tags": [
+    {
+      "updatedAt": "2026-09-19T11:21:40.334Z",
+      "createdAt": "2026-09-19T11:21:40.334Z",
+      "id": "zEyiyCfx0TtGmUCR",
+      "name": "CRM Hygiene & Dedup"
+    }
+  ]
+}

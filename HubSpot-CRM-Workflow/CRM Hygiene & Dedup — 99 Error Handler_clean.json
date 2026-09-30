@@ -1,0 +1,234 @@
+{
+  "name": "CRM Hygiene & Dedup — 05 Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "e8692a6c-2ba0-499a-b804-94040543c8e5",
+      "name": "🚨 Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        48,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// n8n hands the Error Trigger a single item describing the failed execution.\nconst e = $input.first().json || {};\nconst wf = e.workflow || {};\nconst ex = e.execution || {};\nconst err = ex.error || e.error || {};\n\nconst stack = String(err.stack || '').split('\\n').slice(0, 6).join('\\n');\nconst node  = err.node?.name || ex.lastNodeExecuted || 'unknown node';\nconst msg   = String(err.message || 'Unknown error').slice(0, 900);\n\n// Classify so on-call knows whether to act now or at leisure.\nlet severity = 'error', hint = 'Open the execution and re-run from the failed node.';\nif (/429|rate limit/i.test(msg)) {\n  severity = 'warning';\n  hint = 'HubSpot rate limit hit. Lower `pageSize` or raise `apiThrottleMs` in ⚙️ Global Config.';\n} else if (/401|403|unauthor|forbidden|invalid.*token|expired/i.test(msg)) {\n  severity = 'critical';\n  hint = 'HubSpot/Slack credential problem. Check the private-app token and its scopes.';\n} else if (/timeout|ETIMEDOUT|ECONNRESET|socket hang up|ENOTFOUND/i.test(msg)) {\n  severity = 'warning';\n  hint = 'Transient network issue. The node already retried 3x — safe to re-run.';\n} else if (/merge/i.test(node)) {\n  severity = 'critical';\n  hint = 'A MERGE step failed. Verify in HubSpot whether the merge partially applied before re-running.';\n}\n\nconst icon = { critical: ':rotating_light:', error: ':x:', warning: ':warning:' }[severity];\n\nconst text = [\n  `${icon} *CRM Hygiene & Dedup — execution failed* (${severity.toUpperCase()})`,\n  `*Workflow:* ${wf.name || 'n/a'}`,\n  `*Failed node:* \\`${node}\\``,\n  `*Mode:* ${ex.mode || 'n/a'}  ·  *When:* ${ex.lastNodeExecuted ? (ex.executionTime || '') : ''} ${new Date().toISOString().slice(0,19).replace('T',' ')} UTC`,\n  '',\n  '```' + msg + '```',\n  `:bulb: ${hint}`,\n  ex.url ? `<${ex.url}|Open the failed execution →>` : '',\n].filter(Boolean).join('\\n');\n\nreturn [{ json: {\n  severity, node, message: msg, hint, stack,\n  workflowName: wf.name || null, workflowId: wf.id || null,\n  executionId: ex.id || null, executionUrl: ex.url || null,\n  text,\n} }];\n"
+      },
+      "id": "2d8b3efa-2463-4736-b561-904e13effe2f",
+      "name": "🧾 Format Error Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        304,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#crm-hygiene-alerts",
+          "mode": "name"
+        },
+        "text": "={{ $json.text }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "mrkdwn": true
+        }
+      },
+      "id": "e9260a40-5e1b-4434-9583-db23a0b3ed26",
+      "name": "💬 Slack: Alert On-Call",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        560,
+        320
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "webhookId": "5f39bfd9-1141-43d2-be5b-feb212363cdb",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c0",
+              "leftValue": "={{ $json.severity }}",
+              "rightValue": "critical",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "e66ad3c4-bee9-4ee3-942c-e931e849f5a2",
+      "name": "🔴 Critical?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        800,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#crm-hygiene-alerts",
+          "mode": "name"
+        },
+        "text": "=:rotating_light: <!here> A *critical* failure needs a human before the next scheduled run: `{{ $json.node }}` — {{ $json.hint }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "mrkdwn": true
+        }
+      },
+      "id": "eecd7538-a17f-4861-8604-b5f4adcb3895",
+      "name": "💬 Slack: Escalate (Critical)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1040,
+        224
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "webhookId": "4326656e-3899-4b04-bba6-1a4e80c83828",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {},
+      "id": "1e1c30cc-a7ff-4a24-a5a5-9c741af74cf9",
+      "name": "✅ Logged",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 99 · ERROR HANDLER\nSet this workflow as the **Error Workflow** on 00 / 10 / 20 / 30 / 40\n(Workflow menu → Settings → Error Workflow). It fires automatically\nwhenever any of them throws.\n\nIt classifies the failure so whoever is on call knows what to do:\n* `critical` — credentials, or a merge that may have half-applied → @here\n* `error` — logic/data problem → fix and re-run\n* `warning` — rate limit or transient network → safe to re-run as is\n\n**Change `#crm-hygiene-alerts`** in both Slack nodes to the client's channel.",
+        "height": 260,
+        "width": 560,
+        "color": 3
+      },
+      "id": "d15d1a12-a0bc-4e9b-bee7-f49517d4d754",
+      "name": "note-0",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "🚨 Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "🧾 Format Error Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧾 Format Error Report": {
+      "main": [
+        [
+          {
+            "node": "💬 Slack: Alert On-Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💬 Slack: Alert On-Call": {
+      "main": [
+        [
+          {
+            "node": "🔴 Critical?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔴 Critical?": {
+      "main": [
+        [
+          {
+            "node": "💬 Slack: Escalate (Critical)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "✅ Logged",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "339c33c8-afcc-49d9-926f-fc872e395b91",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1acf1a17190ae9324a4540c4eee2df728e672b0c691037ef51e222bc93ed61b0"
+  },
+  "nodeGroups": [],
+  "id": "5NW7c3z1wGIWAJEP",
+  "tags": [
+    {
+      "updatedAt": "2026-09-19T11:21:40.334Z",
+      "createdAt": "2026-09-19T11:21:40.334Z",
+      "id": "zEyiyCfx0TtGmUCR",
+      "name": "CRM Hygiene & Dedup"
+    }
+  ]
+}
