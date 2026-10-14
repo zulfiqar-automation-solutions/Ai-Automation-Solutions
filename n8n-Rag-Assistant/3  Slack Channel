@@ -1,0 +1,201 @@
+{
+  "name": "3 KB Slack Channel",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## KB Slack Channel\n1. Import and save KB Chat first, then paste its workflow ID into Run KB Chat.\n2. Attach Slack credentials to the trigger and to Reply in Slack.\n3. In your Slack app, subscribe to the app_mention event and invite the app to a channel.\n4. Same brain as the website chat: this workflow only passes the question in and posts the answer back.",
+        "height": 260,
+        "width": 620
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -16
+      ],
+      "name": "Setup notes",
+      "id": "08b98524-2fa3-4518-838e-f903574dc7ef"
+    },
+    {
+      "parameters": {
+        "trigger": [
+          "app_mention"
+        ],
+        "watchWorkspace": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.slackTrigger",
+      "typeVersion": 1,
+      "position": [
+        272,
+        304
+      ],
+      "name": "Slack Trigger",
+      "id": "f9e4dbab-b59e-4c2a-bb6e-50964eb39e1c",
+      "webhookId": "23fce7b2-61c9-4d7d-bf44-97662b6356ac",
+      "credentials": {
+        "slackApi": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4b005fed-14ed-5867-961b-5836cc6a88f8",
+              "name": "chatInput",
+              "type": "string",
+              "value": "={{ $json.text }}"
+            },
+            {
+              "id": "7004e685-58b2-5604-89ab-49b09e586886",
+              "name": "sessionId",
+              "type": "string",
+              "value": "={{ 'slack-' + $json.channel + '-' + ($json.thread_ts ?? $json.ts) }}"
+            },
+            {
+              "id": "d1513c9d-1ebb-5857-828d-303f9941b954",
+              "name": "channel",
+              "type": "string",
+              "value": "slack"
+            },
+            {
+              "id": "5178e8bb-1db8-59ab-bb55-ca5e8f906d21",
+              "name": "slack_channel",
+              "type": "string",
+              "value": "={{ $json.channel }}"
+            },
+            {
+              "id": "74344756-0992-5207-9322-b3d85d78ab58",
+              "name": "slack_ts",
+              "type": "string",
+              "value": "={{ $json.thread_ts ?? $json.ts }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        528,
+        304
+      ],
+      "name": "Prepare Question",
+      "id": "bb009686-3d5d-47bf-abcf-dc426e30596a"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "r6m1xq6XhQYe3SeO",
+          "mode": "id",
+          "cachedResultUrl": "/workflow/r6m1xq6XhQYe3SeO"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        784,
+        304
+      ],
+      "name": "Run KB Chat",
+      "id": "0f9c935b-bd4a-486d-8113-fb315580156c"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $('Prepare Question').item.json.slack_channel }}",
+          "mode": "id"
+        },
+        "text": "={{ $json.output }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "thread_ts": {
+            "replyValues": {
+              "thread_ts": "={{ $('Prepare Question').item.json.slack_ts }}"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1040,
+        304
+      ],
+      "name": "Reply in Slack",
+      "id": "a4acae87-019d-4728-a74b-c19e46132826",
+      "webhookId": "4202e499-ac40-476b-9b05-0b2ad8885ae3",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Slack Trigger": {
+      "main": [
+        [
+          {
+            "node": "Prepare Question",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Question": {
+      "main": [
+        [
+          {
+            "node": "Run KB Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run KB Chat": {
+      "main": [
+        [
+          {
+            "node": "Reply in Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "mDNX8CdvfBZGN2BG",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "086cc376-b06c-4245-bfed-09d30241b460",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1acf1a17190ae9324a4540c4eee2df728e672b0c691037ef51e222bc93ed61b0"
+  },
+  "nodeGroups": [],
+  "id": "6X3OFOaJE8W0CAKN",
+  "tags": []
+}

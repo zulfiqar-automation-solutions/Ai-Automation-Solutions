@@ -1,0 +1,218 @@
+{
+  "name": "4 KB Cleanup",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## KB Cleanup (nightly)\n1. Replace YOUR_FOLDER_ID with the same folder as KB Ingestion.\n2. Attach credentials: Google Drive, Postgres.\n3. Safety guard: if Drive returns zero files, nothing is deleted. If you really empty the folder, clear the documents table by hand.\n4. Only direct children of the folder are checked, matching the ingestion trigger.",
+        "height": 280,
+        "width": 620
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "name": "Setup notes",
+      "id": "c9fa05f1-ea3a-4920-8a77-af07b21a08c3"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 3
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        272,
+        304
+      ],
+      "name": "Nightly Schedule",
+      "id": "2c34142c-dc3d-418c-b6b5-148e7cb9bfe0"
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "returnAll": true,
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "1botIMaBsOXsQp61ge5KD5-UMQ5dayZVd"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        528,
+        304
+      ],
+      "name": "List Drive Files",
+      "id": "cf673675-4b36-4b13-8803-d8cbb8928ceb",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "YOUR_GOOGLE_CREDENTIAL_ID",
+          "name": "Google account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ids = $input.all().map(i => i.json.id).filter(Boolean);\nreturn [{ json: { drive_ids: ids } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        784,
+        304
+      ],
+      "name": "Collect Drive IDs",
+      "id": "4d768d33-f064-4e59-90d6-a1c2774dbca5"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select distinct metadata->>'file_id' as file_id\nfrom documents\nwhere metadata->>'file_id' is not null;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1040,
+        304
+      ],
+      "name": "Get Indexed File IDs",
+      "id": "66ad952d-3a11-4f7f-ba8a-4693a1ae265e",
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Files that are indexed but no longer in the Drive folder.\nconst drive = new Set($('Collect Drive IDs').first().json.drive_ids);\nif (drive.size === 0) return []; // safety: never delete when Drive returned nothing\nconst indexed = $input.all().map(i => i.json.file_id).filter(Boolean);\nconst orphans = indexed.filter(id => !drive.has(id));\n// safety: if NONE of the indexed files are in this folder, the folder is probably wrong.\nif (indexed.length > 0 && orphans.length === indexed.length) {\n  throw new Error('KB Cleanup stopped: none of the indexed files were found in the Drive folder. Check the folder in List Drive Files. Nothing was deleted.');\n}\nreturn orphans.map(id => ({ json: { file_id: id } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1312,
+        304
+      ],
+      "name": "Find Orphans",
+      "id": "0e61f634-e43f-44d4-b33a-310dc3e93e82"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "delete from documents\nwhere metadata->>'file_id' = $1;",
+        "options": {
+          "queryReplacement": "={{ [$json.file_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1568,
+        304
+      ],
+      "name": "Delete Orphan Chunks",
+      "id": "635e839d-5630-4b31-926d-bfbc9867b584",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Nightly Schedule": {
+      "main": [
+        [
+          {
+            "node": "List Drive Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Drive Files": {
+      "main": [
+        [
+          {
+            "node": "Collect Drive IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Drive IDs": {
+      "main": [
+        [
+          {
+            "node": "Get Indexed File IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Indexed File IDs": {
+      "main": [
+        [
+          {
+            "node": "Find Orphans",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Orphans": {
+      "main": [
+        [
+          {
+            "node": "Delete Orphan Chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "mDNX8CdvfBZGN2BG",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "c23531a5-c7de-4654-beeb-e12914826a78",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1acf1a17190ae9324a4540c4eee2df728e672b0c691037ef51e222bc93ed61b0"
+  },
+  "nodeGroups": [],
+  "id": "eryz6ljH3WPYUGPQ",
+  "tags": []
+}

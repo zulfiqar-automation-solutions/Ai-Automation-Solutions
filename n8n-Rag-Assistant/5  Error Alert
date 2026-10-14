@@ -1,0 +1,86 @@
+{
+  "name": "5 KB Error Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## KB Error Alert\n1. Attach Slack credentials and replace YOUR_SLACK_CHANNEL_ID.\n2. In KB Ingestion, KB Chat, KB Cleanup and KB Slack Channel: Workflow Settings, Error Workflow, choose this workflow.",
+        "height": 200,
+        "width": 560
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "name": "Setup notes",
+      "id": "d880b956-11fb-4328-9f0d-209228b6f70b"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        272,
+        272
+      ],
+      "name": "Error Trigger",
+      "id": "0b095730-9cc9-4fea-b829-b28994cb673a"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "C0C8A4PPJ4R"
+        },
+        "text": "={{ 'Workflow failed: ' + $json.workflow.name + '\\nNode: ' + ($json.execution.lastNodeExecuted ?? 'unknown') + '\\nError: ' + ($json.execution.error?.message ?? 'unknown') + '\\nExecution: ' + ($json.execution.url ?? '') }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        528,
+        272
+      ],
+      "name": "Alert in Slack",
+      "id": "f26987eb-9327-4d76-a806-eab42603691d",
+      "webhookId": "31d1cee3-585c-406c-8c92-3ddaed6d73bc",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Alert in Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "be3f9a4e-133b-4fff-bde4-dd6dd299441b",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1acf1a17190ae9324a4540c4eee2df728e672b0c691037ef51e222bc93ed61b0"
+  },
+  "nodeGroups": [],
+  "id": "mDNX8CdvfBZGN2BG",
+  "tags": []
+}
