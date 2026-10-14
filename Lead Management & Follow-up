@@ -1,0 +1,2 @@
+n8n workflow that validates, scores and stores web-form leads, sends AI-drafted welcome emails, alerts sales on hot leads, and chases uncontacted leads automatically.
+Before  importing the workflow read the README.md document, as it will be helpful for you during the setup.
