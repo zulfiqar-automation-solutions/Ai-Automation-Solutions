@@ -1,0 +1,1605 @@
+{
+  "name": "WF-1 · Lead Intake + AI Qualification + HubSpot Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 1 · LEAD COMES IN\n\nYour website form sends the lead here.\n\n**Setup:** copy the Production URL from this node and paste it into your form's \"Webhook / POST URL\" field.\n\nSend the fields as a **flat body** (not nested). The next node accepts both shapes anyway, so a nested payload will not break it.",
+        "height": 240,
+        "width": 300,
+        "color": 4
+      },
+      "id": "8627dac7-f1dd-4e76-b6b3-18c34fb7a447",
+      "name": "Sticky · Intake",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1040,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 2 · ⚙️ EDIT THIS ONE NODE\n\nAll the settings a client ever needs to change live in the **⚙️ SETTINGS** node.\n\nNothing else in this workflow has a hardcoded email, channel or ID.\n\nChange the values there, save, done.",
+        "height": 208,
+        "width": 300,
+        "color": 3
+      },
+      "id": "f9f2e42d-ac6d-4289-8a55-8046cc3b6dc9",
+      "name": "Sticky · Settings",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -688,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 3 · SAFETY GATE\n\n**Normalize** flattens whatever the form sent into clean fields, and never returns `undefined` — every field falls back to an empty string.\n\n**Required Data Valid?** checks the email exists and is a real email shape.\n\nBad payload → an honest 400 reply, and the workflow stops. It never reaches the AI or your CRM.",
+        "height": 224,
+        "width": 340,
+        "color": 3
+      },
+      "id": "745dfbf4-18fd-4a66-9e8e-e62a84d95faf",
+      "name": "Sticky · Validation",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -320,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 4 · DEDUPLICATION\n\nLooks the email up in HubSpot **before** doing anything.\n\nIf the search fails or finds nothing, the node is set to **continue** rather than stop — so a CRM hiccup can never lose you a lead.\n\nReturning leads are flagged `is_returning = true` so the AI knows this is a second touch, and Slack says so in the alert.",
+        "height": 260,
+        "width": 340,
+        "color": 5
+      },
+      "id": "8f7c249e-b22a-4f31-bd2c-9713292bb201",
+      "name": "Sticky · Dedup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        96,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 5 · AI QUALIFICATION\n\nThe AI returns **strict JSON only** — score, tier, reason, intent, and a ready-to-send reply.\n\nThe **Qualification Schema** node forces that shape, so no Code node is needed to parse the answer and the output can never arrive as loose text.\n\nIf the AI is down, this node continues with an error output instead of killing the run — the lead still reaches HubSpot.",
+        "height": 260,
+        "width": 340,
+        "color": 6
+      },
+      "id": "cf0d28cb-ecfc-4034-82e6-81d473d92352",
+      "name": "Sticky · AI",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        528,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 6 · CRM SYNC\n\nOne node, one job: create the contact, or update it if the email already exists.\n\nScore, tier, reason and source are written to HubSpot so your sales team sees the AI's verdict inside the contact record.\n\n**Before first run:** create these 4 custom contact properties in HubSpot (internal names exactly as written in the sticky note below this one).",
+        "height": 244,
+        "width": 340,
+        "color": 5
+      },
+      "id": "25839b4d-de37-4f0b-bd85-339349656805",
+      "name": "Sticky · CRM",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1024,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### HubSpot custom properties to create once\n\nSettings → Properties → Create property (object: Contact)\n\n| Label | Internal name | Type |\n|---|---|---|\n| AI Lead Score | `ai_lead_score` | Number |\n| AI Lead Tier | `ai_lead_tier` | Single-line text |\n| AI Qualification Reason | `ai_qualification_reason` | Multi-line text |\n| Lead Source Detail | `lead_source_detail` | Single-line text |\n\nIf you skip this, the upsert still works — the four values are simply not stored.",
+        "height": 300,
+        "width": 340,
+        "color": 7
+      },
+      "id": "ca22d393-ec1a-490d-8c89-c7cd9daecba6",
+      "name": "Sticky · HubSpot Properties",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1184,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 7 · ROUTING\n\n**HOT** → Slack alert + AI reply containing your booking link\n**WARM** → AI reply only, sales is not interrupted\n**COLD** → logged to the nurture sheet, nobody is emailed\n\nThresholds live in ⚙️ SETTINGS, not here.\n\n**Hard rule:** a lead can never reach HOT with no budget stated, even if the AI's raw score clears the threshold — it is capped at WARM instead, and the reason field says why. This keeps sales alerts trustworthy and keeps tier stable even if the AI's wording varies between runs.\n\nThe **UNTIERED** output catches any lead the AI failed to grade at all.",
+        "height": 340,
+        "width": 340,
+        "color": 4
+      },
+      "id": "7b3f3837-23ca-4a94-ac13-552d4538b720",
+      "name": "Sticky · Routing",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1376,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-intake",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "96d62ba7-5287-45c2-80d0-1d319cf5afe2",
+      "name": "Webhook · New Lead",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -896,
+        432
+      ],
+      "webhookId": "lead-intake-wf1",
+      "notes": "Copy the Production URL into your website form."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "s1",
+              "name": "cfg_company_name",
+              "type": "string",
+              "value": "Acme Services"
+            },
+            {
+              "id": "s2",
+              "name": "cfg_sales_email",
+              "type": "string",
+              "value": "user@example.com"
+            },
+            {
+              "id": "s3",
+              "name": "cfg_reply_from_name",
+              "type": "string",
+              "value": "Sarah from Acme Services"
+            },
+            {
+              "id": "s4",
+              "name": "cfg_slack_channel",
+              "type": "string",
+              "value": "#sales-leads"
+            },
+            {
+              "id": "s5",
+              "name": "cfg_hot_threshold",
+              "type": "number",
+              "value": 70
+            },
+            {
+              "id": "s6",
+              "name": "cfg_warm_threshold",
+              "type": "number",
+              "value": 40
+            },
+            {
+              "id": "s7",
+              "name": "cfg_booking_link",
+              "type": "string",
+              "value": "https://calendly.com/your-handle/30min"
+            },
+            {
+              "id": "s8",
+              "name": "cfg_nurture_sheet_id",
+              "type": "string",
+              "value": "PASTE_GOOGLE_SHEET_ID_HERE"
+            },
+            {
+              "id": "s9",
+              "name": "cfg_nurture_sheet_tab",
+              "type": "string",
+              "value": "Nurture"
+            },
+            {
+              "id": "s10",
+              "name": "cfg_services_offered",
+              "type": "string",
+              "value": "website design, SEO, paid ads, marketing automation"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "344a1d50-d556-474b-aefe-0bcd5ee126fa",
+      "name": "⚙️ SETTINGS",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -720,
+        432
+      ],
+      "notes": "CLIENT: change values here only. Nothing else needs editing."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "n1",
+              "name": "lead_name",
+              "type": "string",
+              "value": "={{ ($json.body?.name ?? $json.name ?? $json.body?.full_name ?? $json.full_name ?? '').toString().trim() }}"
+            },
+            {
+              "id": "n2",
+              "name": "lead_email",
+              "type": "string",
+              "value": "={{ ($json.body?.email ?? $json.email ?? '').toString().trim().toLowerCase() }}"
+            },
+            {
+              "id": "n3",
+              "name": "lead_phone",
+              "type": "string",
+              "value": "={{ ($json.body?.phone ?? $json.phone ?? '').toString().trim() }}"
+            },
+            {
+              "id": "n4",
+              "name": "lead_company",
+              "type": "string",
+              "value": "={{ ($json.body?.company ?? $json.company ?? '').toString().trim() }}"
+            },
+            {
+              "id": "n5",
+              "name": "lead_message",
+              "type": "string",
+              "value": "={{ ($json.body?.message ?? $json.message ?? $json.body?.enquiry ?? '').toString().trim() }}"
+            },
+            {
+              "id": "n6",
+              "name": "lead_budget",
+              "type": "string",
+              "value": "={{ ($json.body?.budget ?? $json.budget ?? 'not stated').toString().trim() }}"
+            },
+            {
+              "id": "n7",
+              "name": "lead_timeline",
+              "type": "string",
+              "value": "={{ ($json.body?.timeline ?? $json.timeline ?? 'not stated').toString().trim() }}"
+            },
+            {
+              "id": "n8",
+              "name": "lead_service",
+              "type": "string",
+              "value": "={{ ($json.body?.service ?? $json.service ?? 'not stated').toString().trim() }}"
+            },
+            {
+              "id": "n9",
+              "name": "lead_source",
+              "type": "string",
+              "value": "={{ ($json.body?.source ?? $json.source ?? 'website-form').toString().trim() }}"
+            },
+            {
+              "id": "n10",
+              "name": "first_name",
+              "type": "string",
+              "value": "={{ (($json.body?.name ?? $json.name ?? '').toString().trim().split(' ')[0]) || 'there' }}"
+            },
+            {
+              "id": "n11",
+              "name": "last_name",
+              "type": "string",
+              "value": "={{ (($json.body?.name ?? $json.name ?? '').toString().trim().split(' ').slice(1).join(' ')) || '' }}"
+            },
+            {
+              "id": "n12",
+              "name": "received_at",
+              "type": "string",
+              "value": "={{ $now.toISO() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7f0068ed-d968-4e0d-93df-7be6b8a6a123",
+      "name": "Normalize Lead Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -512,
+        432
+      ],
+      "notes": "Accepts flat OR nested payloads. Every field has a fallback so nothing is ever undefined."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "v1",
+              "leftValue": "={{ $json.lead_email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "v2",
+              "leftValue": "={{ $json.lead_email }}",
+              "rightValue": "^[^@\\s]+@[^@\\s.]+\\.[a-zA-Z]{2,}$",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "5667762b-74d8-4774-8b07-7c2f526b3227",
+      "name": "Required Data Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -320,
+        432
+      ],
+      "notes": "TRUE = email present and correctly shaped. FALSE = stop and reply 400."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: \"error\", message: \"A valid email address is required.\", received_at: $json.received_at }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "45007574-44f1-40c2-a0cd-043b3032c5d9",
+      "name": "Respond · Invalid Payload",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -128,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: \"received\", message: \"Thank you. Your enquiry has been received.\", email: $json.lead_email }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "7eac1bcb-ca51-4e6b-85c8-7c3eba43b447",
+      "name": "Respond · Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -80,
+        224
+      ],
+      "notes": "Replies to the form immediately so the visitor never waits for the AI."
+    },
+    {
+      "parameters": {
+        "authentication": "appToken",
+        "operation": "search",
+        "limit": 1,
+        "filterGroupsUi": {
+          "filterGroupsValues": [
+            {
+              "filtersUi": {
+                "filterValues": [
+                  {
+                    "propertyName": "email|string",
+                    "value": "={{ $json.lead_email }}"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {}
+      },
+      "id": "72069c98-dbba-4876-b457-8cd8dc9aa34e",
+      "name": "HubSpot · Find Existing Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        0,
+        416
+      ],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "SAFETY: alwaysOutputData + continue on error, so a CRM outage cannot lose the lead."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d1",
+              "leftValue": "={{ $json.id ?? '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "70b59fc6-8a9f-4e76-bb21-557341e78f62",
+      "name": "Returning Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        240,
+        416
+      ],
+      "notes": "A HubSpot contact id came back = we have seen this person before."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "r1",
+              "name": "is_returning",
+              "type": "boolean",
+              "value": true
+            },
+            {
+              "id": "r2",
+              "name": "hubspot_contact_id",
+              "type": "string",
+              "value": "={{ $json.id ?? '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bd676d9e-1195-4a6f-a2e1-1527d88df50d",
+      "name": "Flag · Returning Lead",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        528,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "w1",
+              "name": "is_returning",
+              "type": "boolean",
+              "value": false
+            },
+            {
+              "id": "w2",
+              "name": "hubspot_contact_id",
+              "type": "string",
+              "value": ""
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "89195a77-3b1d-4f52-8b30-b78aeb75fe43",
+      "name": "Flag · New Lead",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        528,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are the lead qualification analyst for {{ $('⚙️ SETTINGS').first().json.cfg_company_name }}.\n\nWe offer: {{ $('⚙️ SETTINGS').first().json.cfg_services_offered }}\n\nScore the enquiry below. Score each of the 5 factors SEPARATELY using its own anchors below — do not blend them into one overall gut-feel number.\n\n=== ENQUIRY ===\nName: {{ $('Normalize Lead Fields').first().json.lead_name || 'not given' }}\nEmail: {{ $('Normalize Lead Fields').first().json.lead_email }}\nCompany: {{ $('Normalize Lead Fields').first().json.lead_company || 'not given' }}\nPhone given: {{ $('Normalize Lead Fields').first().json.lead_phone ? 'yes' : 'no' }}\nService requested: {{ $('Normalize Lead Fields').first().json.lead_service }}\nBudget: {{ $('Normalize Lead Fields').first().json.lead_budget }}\nTimeline: {{ $('Normalize Lead Fields').first().json.lead_timeline }}\nMessage: {{ $('Normalize Lead Fields').first().json.lead_message || 'no message provided' }}\nPreviously contacted us: {{ $json.is_returning ? 'YES - this is a repeat enquiry, treat as warmer' : 'no - first contact' }}\n\n=== SCORE EACH FACTOR SEPARATELY ===\n1. budget_score (0-30): 0 = no budget stated; 10-15 = vague or below typical project cost; 20-25 = budget stated and reasonable; 30 = budget stated and matches or exceeds typical cost for this service.\n2. timeline_score (0-25): 0 = no timeline or 'someday'/'not stated'; 8-12 = weeks to a couple months out; 18-20 = within a few weeks; 25 = ASAP, urgent, this week.\n3. service_score (0-20): 0 = unrelated to what we offer; 10 = loosely related; 20 = exact match to what we offer.\n4. message_score (0-15): 0 = one-liner, vague, or generic; 8 = some specific detail; 15 = detailed, specific, clear buying intent.\n5. contact_score (0-10): 0 = email only; 5 = email plus one of phone/company; 10 = email plus phone plus company.\n\nSpam, vague one-liners, job applications, sales pitches at us, or unrelated services: score every factor at or near 0 and set intent to \"spam_or_irrelevant\".\n\n=== USE THE TOTAL FOR REPLY TONE ONLY ===\nAdd your 5 scores together, plus 10 if this is a repeat enquiry (cap at 100). The workflow computes the official tier itself from your numbers — you do not output a tier. Use your own total only to decide how to write the reply, against these bands:\nhot  >= {{ $('⚙️ SETTINGS').first().json.cfg_hot_threshold }}\nwarm >= {{ $('⚙️ SETTINGS').first().json.cfg_warm_threshold }} and below hot\ncold = anything lower\n\n=== REPLY RULES ===\nWrite reply_body as plain text from {{ $('⚙️ SETTINGS').first().json.cfg_reply_from_name }}. Address them as {{ $('Normalize Lead Fields').first().json.first_name }}. Reference what they actually asked about. 90 words maximum. No markdown, no placeholders, no invented prices, no invented case studies.\nIf your total is hot: invite them to pick a time and end with this exact link on its own line: {{ $('⚙️ SETTINGS').first().json.cfg_booking_link }}\nIf your total is warm: answer helpfully and ask the one question that would qualify them.\nIf your total is cold: thank them politely and point them to our website. Do not invite a call.",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You are a precise B2B lead qualification engine. You output only the requested JSON object. You never invent facts about the company, its pricing, or its clients. You never exceed the stated word limits."
+            }
+          ]
+        }
+      },
+      "id": "ed8b2b66-cb95-4da0-8d8c-42a4b60b4e59",
+      "name": "AI · Qualify Lead",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        768,
+        432
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "onError": "continueErrorOutput",
+      "notes": "SAFETY: 2 retries, then the error output routes to the AI-failure fallback so the lead still reaches HubSpot."
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {
+          "maxTokens": 700,
+          "temperature": 0
+        }
+      },
+      "id": "08f8b90b-47f8-476f-9b7d-f0d1557bd450",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        752,
+        656
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      },
+      "notes": "Low temperature = consistent scores. Swap this node for any other chat model; nothing else changes."
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"budget_score\",\n    \"timeline_score\",\n    \"service_score\",\n    \"message_score\",\n    \"contact_score\",\n    \"reason\",\n    \"intent\",\n    \"reply_subject\",\n    \"reply_body\",\n    \"recommended_action\"\n  ],\n  \"properties\": {\n    \"budget_score\": {\n      \"type\": \"integer\",\n      \"minimum\": 0,\n      \"maximum\": 30,\n      \"description\": \"Budget fit, 0-30. Anchors: 0=not stated, 10-15=vague/below typical cost, 20-25=stated and reasonable, 30=matches or exceeds typical cost\"\n    },\n    \"timeline_score\": {\n      \"type\": \"integer\",\n      \"minimum\": 0,\n      \"maximum\": 25,\n      \"description\": \"Urgency, 0-25. Anchors: 0=none/'someday', 8-12=weeks-months out, 18-20=within weeks, 25=ASAP/urgent\"\n    },\n    \"service_score\": {\n      \"type\": \"integer\",\n      \"minimum\": 0,\n      \"maximum\": 20,\n      \"description\": \"Service match, 0-20. Anchors: 0=unrelated, 10=loosely related, 20=exact match\"\n    },\n    \"message_score\": {\n      \"type\": \"integer\",\n      \"minimum\": 0,\n      \"maximum\": 15,\n      \"description\": \"Message detail/intent, 0-15. Anchors: 0=vague one-liner, 8=some detail, 15=specific with clear buying intent\"\n    },\n    \"contact_score\": {\n      \"type\": \"integer\",\n      \"minimum\": 0,\n      \"maximum\": 10,\n      \"description\": \"Contact completeness, 0-10. Anchors: 0=email only, 5=email+one of phone/company, 10=email+phone+company\"\n    },\n    \"reason\": {\n      \"type\": \"string\",\n      \"description\": \"One or two sentences explaining the score, for the sales team\"\n    },\n    \"intent\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"ready_to_buy\",\n        \"comparing_options\",\n        \"early_research\",\n        \"support_request\",\n        \"spam_or_irrelevant\"\n      ],\n      \"description\": \"What this person actually wants\"\n    },\n    \"reply_subject\": {\n      \"type\": \"string\",\n      \"description\": \"Email subject line, under 60 characters\"\n    },\n    \"reply_body\": {\n      \"type\": \"string\",\n      \"description\": \"Plain text email body, 90 words maximum\"\n    },\n    \"recommended_action\": {\n      \"type\": \"string\",\n      \"description\": \"The single next step the sales team should take\"\n    }\n  }\n}"
+      },
+      "id": "ce8d50b6-9025-4456-8ec6-10808b44b4cb",
+      "name": "Qualification Schema",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        928,
+        704
+      ],
+      "notes": "Forces strict JSON. This is what removes the need for a Code node."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f1",
+              "name": "score",
+              "type": "number",
+              "value": 50
+            },
+            {
+              "id": "f2",
+              "name": "tier",
+              "type": "string",
+              "value": "warm"
+            },
+            {
+              "id": "f3",
+              "name": "reason",
+              "type": "string",
+              "value": "AI qualification was unavailable, so this lead was routed to WARM for manual review."
+            },
+            {
+              "id": "f4",
+              "name": "intent",
+              "type": "string",
+              "value": "early_research"
+            },
+            {
+              "id": "f5",
+              "name": "reply_subject",
+              "type": "string",
+              "value": "={{ 'Thanks for contacting ' + $('⚙️ SETTINGS').first().json.cfg_company_name }}"
+            },
+            {
+              "id": "f6",
+              "name": "reply_body",
+              "type": "string",
+              "value": "={{ 'Hi ' + $('Normalize Lead Fields').first().json.first_name + ',\\n\\nThank you for getting in touch. We have received your enquiry and a member of the team will reply personally very shortly.\\n\\nBest regards,\\n' + $('⚙️ SETTINGS').first().json.cfg_reply_from_name }}"
+            },
+            {
+              "id": "f7",
+              "name": "recommended_action",
+              "type": "string",
+              "value": "Review this lead manually — the AI step did not run."
+            },
+            {
+              "id": "f8",
+              "name": "ai_failed",
+              "type": "boolean",
+              "value": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "78164933-ce4e-4d16-9684-181f2e96b3be",
+      "name": "Fallback · AI Unavailable",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        912,
+        928
+      ],
+      "notes": "SAFETY NET: if the AI fails, the lead is graded WARM and still saved. Nothing is lost."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b1",
+              "name": "lead_name",
+              "type": "string",
+              "value": "={{ $('Normalize Lead Fields').first().json.lead_name }}"
+            },
+            {
+              "id": "b2",
+              "name": "lead_email",
+              "type": "string",
+              "value": "={{ $('Normalize Lead Fields').first().json.lead_email }}"
+            },
+            {
+              "id": "b3",
+              "name": "first_name",
+              "type": "string",
+              "value": "={{ $('Normalize Lead Fields').first().json.first_name }}"
+            },
+            {
+              "id": "b4",
+              "name": "last_name",
+              "type": "string",
+              "value": "={{ $('Normalize Lead Fields').first().json.last_name }}"
+            },
+            {
+              "id": "b5",
+              "name": "lead_phone",
+              "type": "string",
+              "value": "={{ $('Normalize Lead Fields').first().json.lead_phone }}"
+            },
+            {
+              "id": "b6",
+              "name": "lead_company",
+              "type": "string",
+              "value": "={{ $('Normalize Lead Fields').first().json.lead_company }}"
+            },
+            {
+              "id": "b7",
+              "name": "lead_message",
+              "type": "string",
+              "value": "={{ $('Normalize Lead Fields').first().json.lead_message }}"
+            },
+            {
+              "id": "b8",
+              "name": "lead_service",
+              "type": "string",
+              "value": "={{ $('Normalize Lead Fields').first().json.lead_service }}"
+            },
+            {
+              "id": "b9",
+              "name": "lead_budget",
+              "type": "string",
+              "value": "={{ $('Normalize Lead Fields').first().json.lead_budget }}"
+            },
+            {
+              "id": "b10",
+              "name": "lead_timeline",
+              "type": "string",
+              "value": "={{ $('Normalize Lead Fields').first().json.lead_timeline }}"
+            },
+            {
+              "id": "b11",
+              "name": "lead_source",
+              "type": "string",
+              "value": "={{ $('Normalize Lead Fields').first().json.lead_source }}"
+            },
+            {
+              "id": "b12",
+              "name": "received_at",
+              "type": "string",
+              "value": "={{ $('Normalize Lead Fields').first().json.received_at }}"
+            },
+            {
+              "id": "b13",
+              "name": "is_returning",
+              "type": "boolean",
+              "value": "={{ $('HubSpot · Find Existing Contact').first().json.id ? true : false }}"
+            },
+            {
+              "id": "b14",
+              "name": "score",
+              "type": "number",
+              "value": "={{ (() => { const o = $json.output ?? $json; const b = Number(o.budget_score ?? 0); const t = Number(o.timeline_score ?? 0); const s = Number(o.service_score ?? 0); const m = Number(o.message_score ?? 0); const c = Number(o.contact_score ?? 0); const returning = $('HubSpot · Find Existing Contact').first().json.id ? 10 : 0; return Math.min(100, Math.max(0, b + t + s + m + c + returning)); })() }}"
+            },
+            {
+              "id": "b15",
+              "name": "tier",
+              "type": "string",
+              "value": "={{ (() => { const o = $json.output ?? $json; const b = Number(o.budget_score ?? 0); const t = Number(o.timeline_score ?? 0); const s = Number(o.service_score ?? 0); const m = Number(o.message_score ?? 0); const c = Number(o.contact_score ?? 0); const returning = $('HubSpot · Find Existing Contact').first().json.id ? 10 : 0; const total = Math.min(100, Math.max(0, b + t + s + m + c + returning)); const hotT = Number($('⚙️ SETTINGS').first().json.cfg_hot_threshold); const warmT = Number($('⚙️ SETTINGS').first().json.cfg_warm_threshold); const rawTier = total >= hotT ? 'hot' : (total >= warmT ? 'warm' : 'cold'); const budget = ($('Normalize Lead Fields').first().json.lead_budget ?? 'not stated').toString().trim().toLowerCase(); const noBudget = (budget === '' || budget === 'not stated'); return (rawTier === 'hot' && noBudget) ? 'warm' : rawTier; })() }}"
+            },
+            {
+              "id": "b16",
+              "name": "reason",
+              "type": "string",
+              "value": "={{ (() => { const o = $json.output ?? $json; const b = Number(o.budget_score ?? 0); const t = Number(o.timeline_score ?? 0); const s = Number(o.service_score ?? 0); const m = Number(o.message_score ?? 0); const c = Number(o.contact_score ?? 0); const returning = $('HubSpot · Find Existing Contact').first().json.id ? 10 : 0; const total = Math.min(100, Math.max(0, b + t + s + m + c + returning)); const hotT = Number($('⚙️ SETTINGS').first().json.cfg_hot_threshold); const warmT = Number($('⚙️ SETTINGS').first().json.cfg_warm_threshold); const rawTier = total >= hotT ? 'hot' : (total >= warmT ? 'warm' : 'cold'); const budget = ($('Normalize Lead Fields').first().json.lead_budget ?? 'not stated').toString().trim().toLowerCase(); const noBudget = (budget === '' || budget === 'not stated'); const base = o.reason ?? 'No reason returned.'; return (rawTier === 'hot' && noBudget) ? (base + ' Capped at WARM: no budget was stated.') : base; })() }}"
+            },
+            {
+              "id": "b17",
+              "name": "intent",
+              "type": "string",
+              "value": "={{ $json.output?.intent ?? $json.intent ?? 'early_research' }}"
+            },
+            {
+              "id": "b18",
+              "name": "reply_subject",
+              "type": "string",
+              "value": "={{ $json.output?.reply_subject ?? $json.reply_subject ?? 'Thanks for your enquiry' }}"
+            },
+            {
+              "id": "b19",
+              "name": "reply_body",
+              "type": "string",
+              "value": "={{ (() => { const o = $json.output ?? $json; const b = Number(o.budget_score ?? 0); const t = Number(o.timeline_score ?? 0); const s = Number(o.service_score ?? 0); const m = Number(o.message_score ?? 0); const c = Number(o.contact_score ?? 0); const returning = $('HubSpot · Find Existing Contact').first().json.id ? 10 : 0; const total = Math.min(100, Math.max(0, b + t + s + m + c + returning)); const hotT = Number($('⚙️ SETTINGS').first().json.cfg_hot_threshold); const warmT = Number($('⚙️ SETTINGS').first().json.cfg_warm_threshold); const rawTier = total >= hotT ? 'hot' : (total >= warmT ? 'warm' : 'cold'); const budget = ($('Normalize Lead Fields').first().json.lead_budget ?? 'not stated').toString().trim().toLowerCase(); const noBudget = (budget === '' || budget === 'not stated'); const tier = (rawTier === 'hot' && noBudget) ? 'warm' : rawTier; const body = (o.reply_body ?? '').toString().trim(); const link = $('⚙️ SETTINGS').first().json.cfg_booking_link; if (tier !== 'hot') return body; return body.includes(link) ? body : body + '\\n\\n' + link; })() }}"
+            },
+            {
+              "id": "b20",
+              "name": "recommended_action",
+              "type": "string",
+              "value": "={{ $json.output?.recommended_action ?? $json.recommended_action ?? 'Review manually.' }}"
+            },
+            {
+              "id": "b21",
+              "name": "ai_failed",
+              "type": "boolean",
+              "value": "={{ $json.ai_failed === true }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4f5ddbea-1fcd-4b5e-b26d-918850f4d623",
+      "name": "Build Lead Record",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1104,
+        432
+      ],
+      "notes": "Single source of truth. Every downstream node reads only from here. Handles both the AI output and the fallback shape."
+    },
+    {
+      "parameters": {
+        "authentication": "appToken",
+        "email": "={{ encodeURIComponent($json.lead_email) }}",
+        "additionalFields": {
+          "companyName": "={{ $json.lead_company }}",
+          "customPropertiesUi": {
+            "customPropertiesValues": [
+              {
+                "property": "ai_lead_score",
+                "value": "={{ $json.score }}"
+              },
+              {
+                "property": "ai_lead_tier",
+                "value": "={{ $json.tier }}"
+              },
+              {
+                "property": "ai_qualification_reason",
+                "value": "={{ $json.reason }}"
+              },
+              {
+                "property": "lead_source_detail",
+                "value": "={{ $json.lead_source }}"
+              }
+            ]
+          },
+          "firstName": "={{ $json.first_name }}",
+          "lastName": "={{ $json.last_name }}",
+          "lifeCycleStage": "={{ $json.tier === 'hot' ? 'marketingqualifiedlead' : ($json.tier === 'warm' ? 'lead' : 'subscriber') }}",
+          "phoneNumber": "={{ $json.lead_phone }}"
+        },
+        "options": {}
+      },
+      "id": "a4bb6956-d2b7-4ebd-990c-d33bd487f12c",
+      "name": "HubSpot · Upsert Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        432
+      ],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Creates or updates by email — one node, no branching. Continues on error so notifications still fire."
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "rt1",
+                    "leftValue": "={{ $('Build Lead Record').first().json.tier }}",
+                    "rightValue": "hot",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "HOT"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "rt2",
+                    "leftValue": "={{ $('Build Lead Record').first().json.tier }}",
+                    "rightValue": "warm",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "WARM"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "rt3",
+                    "leftValue": "={{ $('Build Lead Record').first().json.tier }}",
+                    "rightValue": "cold",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "COLD"
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "UNTIERED"
+        }
+      },
+      "id": "ba34b39b-e1b1-4cd4-ba7b-0bd1bb40aee2",
+      "name": "Route By Tier",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1568,
+        432
+      ],
+      "notes": "4 outputs: HOT, WARM, COLD, UNTIERED. Nothing can fall through unhandled."
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('⚙️ SETTINGS').first().json.cfg_slack_channel }}"
+        },
+        "text": "=:fire: *HOT LEAD — score {{ $('Build Lead Record').first().json.score }}/100*\n\n*Name:* {{ $('Build Lead Record').first().json.lead_name || 'not given' }}\n*Email:* {{ $('Build Lead Record').first().json.lead_email }}\n*Phone:* {{ $('Build Lead Record').first().json.lead_phone || 'not given' }}\n*Company:* {{ $('Build Lead Record').first().json.lead_company || 'not given' }}\n*Service:* {{ $('Build Lead Record').first().json.lead_service }}\n*Budget:* {{ $('Build Lead Record').first().json.lead_budget }}\n*Timeline:* {{ $('Build Lead Record').first().json.lead_timeline }}\n*Repeat enquiry:* {{ $('Build Lead Record').first().json.is_returning ? 'YES' : 'no' }}\n\n*Why it scored high:* {{ $('Build Lead Record').first().json.reason }}\n*Next step:* {{ $('Build Lead Record').first().json.recommended_action }}\n\n*Their message:*\n> {{ ($('Build Lead Record').first().json.lead_message || 'no message provided').slice(0, 500) }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "id": "e3500e8d-ff20-42e0-907b-3a10f6bd2e3d",
+      "name": "Slack · Hot Lead Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1760,
+        176
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "webhookId": "76cc627b-e0b8-452a-8589-bfefcbb14bb7",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Continues on error so a Slack outage never blocks the reply email."
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Build Lead Record').first().json.lead_email }}",
+        "subject": "={{ $('Build Lead Record').first().json.reply_subject }}",
+        "emailType": "text",
+        "message": "={{ $('Build Lead Record').first().json.reply_body }}",
+        "options": {
+          "senderName": "={{ $('⚙️ SETTINGS').first().json.cfg_reply_from_name }}",
+          "replyTo": "={{ $('⚙️ SETTINGS').first().json.cfg_sales_email }}"
+        }
+      },
+      "id": "4d3c4655-fa9e-43ad-9fd5-9f18a9fb5a73",
+      "name": "Gmail · AI Reply (Hot)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1936,
+        208
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "webhookId": "1ebc1e5a-8932-4bde-9efc-c156df7408e7",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GOOGLE_CREDENTIAL_ID",
+          "name": "Google account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "To have a human approve first: change Operation to 'Create Draft'."
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Build Lead Record').first().json.lead_email }}",
+        "subject": "={{ $('Build Lead Record').first().json.reply_subject }}",
+        "emailType": "text",
+        "message": "={{ $('Build Lead Record').first().json.reply_body }}",
+        "options": {
+          "senderName": "={{ $('⚙️ SETTINGS').first().json.cfg_reply_from_name }}",
+          "replyTo": "={{ $('⚙️ SETTINGS').first().json.cfg_sales_email }}"
+        }
+      },
+      "id": "2f3d89d5-7ba0-4d4f-bac1-619a0e1d6ac6",
+      "name": "Gmail · AI Reply (Warm)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1808,
+        432
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "webhookId": "2561436d-45de-4e35-b63d-dd1e174c59bc",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GOOGLE_CREDENTIAL_ID",
+          "name": "Google account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Warm leads get a helpful reply but do NOT interrupt the sales team."
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "=1SuNLSHXh2mbIwcDXTfLMDyMiusBrP5dAiT4UTbA4Q28",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "=Log Nurture Lead",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "lead_name",
+              "displayName": "lead_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_email",
+              "displayName": "lead_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "first_name",
+              "displayName": "first_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "last_name",
+              "displayName": "last_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_phone",
+              "displayName": "lead_phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_company",
+              "displayName": "lead_company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_message",
+              "displayName": "lead_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_service",
+              "displayName": "lead_service",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_budget",
+              "displayName": "lead_budget",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_timeline",
+              "displayName": "lead_timeline",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_source",
+              "displayName": "lead_source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "is_returning",
+              "displayName": "is_returning",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "score",
+              "displayName": "score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "tier",
+              "displayName": "tier",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reason",
+              "displayName": "reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "intent",
+              "displayName": "intent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "d1541a59-4940-4473-8260-5d8316d614ea",
+      "name": "Sheets · Log Nurture Lead",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1808,
+        672
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_CREDENTIAL_ID",
+          "name": "Google account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Cold leads are recorded and tagged, never emailed by sales. Sheet header row must match these column names."
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('⚙️ SETTINGS').first().json.cfg_slack_channel }}"
+        },
+        "text": "=:warning: *LEAD NEEDS MANUAL REVIEW*\n\nThis lead could not be tiered automatically and was saved to HubSpot untouched.\n\n*Email:* {{ $('Build Lead Record').first().json.lead_email }}\n*Name:* {{ $('Build Lead Record').first().json.lead_name || 'not given' }}\n*Score returned:* {{ $('Build Lead Record').first().json.score }}\n*Tier returned:* {{ $('Build Lead Record').first().json.tier || 'empty' }}\n*AI step failed:* {{ $('Build Lead Record').first().json.ai_failed ? 'YES' : 'no' }}\n\nPlease open the contact in HubSpot and qualify it by hand.",
+        "otherOptions": {
+          "includeLinkToWorkflow": true
+        }
+      },
+      "id": "d1bb7727-dbc7-4d15-a8f6-1a5a155721a3",
+      "name": "Slack · Untiered Lead Review",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1808,
+        896
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "webhookId": "8243f441-0550-4291-8683-0000de8541c6",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "LAST SAFETY NET. If this ever fires, a lead reached HubSpot without a tier — a human is told immediately."
+    },
+    {
+      "parameters": {
+        "content": "## WHY THIS WORKFLOW DOES NOT THROW \"Can't determine which item\"\n\nEvery cross-node reference uses `$('Node Name').first().json.field` — never `.item.json`.\n\n`.item` asks n8n to trace which input item produced the current one. After an AI node that trace can break, and you get the paired-item error that is impossible to debug from the UI.\n\nOne webhook call = one lead = one item, so `.first()` is always the same item — and it can never fail.\n\n**If you add nodes: keep using `.first()`.**\n\n---\n\n**Second rule: never `.first()` a node that has more than one output (IF / Switch).**\n\n`$('SomeIfNode').first()` silently reads output 0 only. If the run took the other branch, that output has zero items and the field becomes `null` with no error shown.\n\nFix: reference the single-output node that runs **before** the branch instead — e.g. `$('HubSpot · Find Existing Contact')`, not `$('Returning Lead?')`.",
+        "height": 580,
+        "width": 360,
+        "color": 7
+      },
+      "id": "39fadc71-7ae1-426c-a935-17adec539a99",
+      "name": "Sticky · Why No Paired-Item Errors",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        128,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## TEST IT WITH NO TOOLS\n\nThe webhook has **pinned test data** (a realistic hot lead).\n\nClick **Test workflow** and it runs end to end using that data — no Postman, no live form.\n\nExpected result: score 80+, tier `hot`, Slack alert fires, reply email sent.\n\nWhen you go live, click the pin icon on the Webhook node to unpin it.",
+        "height": 236,
+        "width": 340,
+        "color": 4
+      },
+      "id": "d2e99528-95ec-41ca-a9a7-523058aa8dcf",
+      "name": "Sticky · How To Test",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -944,
+        736
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## GUARDRAIL: booking link is never left to the AI\n\nThe AI is asked to end hot replies with the booking link, but a language model is never 100% obedient to a formatting instruction — it can drop it.\n\nSo `reply_body` here checks the AI's tier itself: if `hot` and the link is missing, it is appended automatically before the email ever sends. A hot lead can now never receive an email without a way to book.",
+        "height": 260,
+        "width": 340,
+        "color": 6
+      },
+      "id": "361f86a3-e8a3-4ab2-8415-cb9c8565d874",
+      "name": "Sticky · Booking Link Guardrail",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        512,
+        816
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook · New Lead": {
+      "main": [
+        [
+          {
+            "node": "⚙️ SETTINGS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ SETTINGS": {
+      "main": [
+        [
+          {
+            "node": "Normalize Lead Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Lead Fields": {
+      "main": [
+        [
+          {
+            "node": "Required Data Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Required Data Valid?": {
+      "main": [
+        [
+          {
+            "node": "Respond · Success",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HubSpot · Find Existing Contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond · Invalid Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot · Find Existing Contact": {
+      "main": [
+        [
+          {
+            "node": "Returning Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Returning Lead?": {
+      "main": [
+        [
+          {
+            "node": "Flag · Returning Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Flag · New Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flag · Returning Lead": {
+      "main": [
+        [
+          {
+            "node": "AI · Qualify Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flag · New Lead": {
+      "main": [
+        [
+          {
+            "node": "AI · Qualify Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI · Qualify Lead",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qualification Schema": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI · Qualify Lead",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI · Qualify Lead": {
+      "main": [
+        [
+          {
+            "node": "Build Lead Record",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fallback · AI Unavailable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fallback · AI Unavailable": {
+      "main": [
+        [
+          {
+            "node": "Build Lead Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Lead Record": {
+      "main": [
+        [
+          {
+            "node": "HubSpot · Upsert Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot · Upsert Contact": {
+      "main": [
+        [
+          {
+            "node": "Route By Tier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route By Tier": {
+      "main": [
+        [
+          {
+            "node": "Slack · Hot Lead Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gmail · AI Reply (Warm)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sheets · Log Nurture Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack · Untiered Lead Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack · Hot Lead Alert": {
+      "main": [
+        [
+          {
+            "node": "Gmail · AI Reply (Hot)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "GgtiRcQ5SBBKIIPk",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "05b432c5-abdd-4327-ae67-3f9ae30d7f23",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1acf1a17190ae9324a4540c4eee2df728e672b0c691037ef51e222bc93ed61b0"
+  },
+  "nodeGroups": [],
+  "id": "e5EgoveQ7MDBeKK2",
+  "tags": []
+}

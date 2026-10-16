@@ -1,0 +1,1384 @@
+{
+  "name": "WF-2 · Calendly Booking Sync (Hot Leads → HubSpot)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 1 · CALENDLY CONNECTS HERE\n\n**Needs:** a paid Calendly plan (Standard / Professional or higher). Webhooks do not exist on the Free plan.\n\n**Credential:** Calendly → Integrations → *API & Webhooks* → generate a **Personal Access Token** → paste it into a new *Calendly API* credential in n8n.\n\n**No URL to copy.** When you **activate** this workflow, n8n registers the webhook in Calendly for you. Your n8n must be on **https://**.",
+        "height": 316,
+        "width": 320,
+        "color": 4
+      },
+      "name": "Sticky · Calendly Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        128,
+        -192
+      ],
+      "id": "3a05f1a1-5635-49b3-b03f-649ab32c8b57"
+    },
+    {
+      "parameters": {
+        "content": "## 2 · ⚙️ EDIT THIS ONE NODE\n\nEvery value a client changes lives in **⚙️ SETTINGS**: Slack channel, sender name, timezone, booking link, sheet ID, prep checklist.\n\n`cfg_calendly_event_filter` — leave empty to process every Calendly booking, or type part of the event name (e.g. `Discovery`) to ignore personal / internal event types.",
+        "height": 268,
+        "width": 320,
+        "color": 3
+      },
+      "name": "Sticky · Settings",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        752,
+        -176
+      ],
+      "id": "b928cf02-a89e-465a-8421-5441128889bc"
+    },
+    {
+      "parameters": {
+        "content": "## HOW RESCHEDULES ARE HANDLED\n\nCalendly sends a reschedule as **two** events:\n1. `invitee.canceled` with `rescheduled = true`\n2. `invitee.created` with `old_invitee` filled in\n\n**Normalize Booking** labels #1 `reschedule_old` and #2 `rescheduled`. The IF node drops #1.\n\nResult: a reschedule is never mistaken for a lost lead, and the lead never gets a \"sorry you cancelled\" email.",
+        "height": 284,
+        "width": 360,
+        "color": 6
+      },
+      "name": "Sticky · Reschedule Logic",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1328,
+        -176
+      ],
+      "id": "c3b642a0-0738-41cd-9591-694d974f96d7"
+    },
+    {
+      "parameters": {
+        "content": "## HUBSPOT — CREATE 3 PROPERTIES ONCE\n\nHubSpot → Settings → Properties → Contact → **Create property**. Type **Single-line text** for all three. Internal names must match exactly:\n\n• `meeting_status`\n• `meeting_start_time`\n• `meeting_join_url`\n\n`ai_lead_tier`, `ai_lead_score` and `lead_source_detail` already exist from WF-1.\n\nAfter creating them, click the ↻ refresh icon inside the HubSpot node so n8n sees them.",
+        "height": 360,
+        "width": 380,
+        "color": 6
+      },
+      "name": "Sticky · HubSpot Properties",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1232,
+        336
+      ],
+      "id": "42f35954-6267-44ea-98ca-744bad327025"
+    },
+    {
+      "parameters": {
+        "content": "## TEST IT WITH NO BOOKING\n\nThe Calendly Trigger has **pinned test data**: a booking by the same test lead WF-1 uses (`user@example.com`).\n\nClick **Test workflow**. Expected:\n• status `booked`\n• Slack \"CALL BOOKED\" (shows HOT + score if WF-1's test ran first)\n• prep email to the lead\n• one row in the Bookings sheet\n\nCanceled and rescheduled test payloads are in the handover file.",
+        "height": 360,
+        "width": 360,
+        "color": 4
+      },
+      "name": "Sticky · How To Test",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -32,
+        352
+      ],
+      "id": "39c77fa1-32dd-4fc1-9510-7d1f3f09cd51"
+    },
+    {
+      "parameters": {
+        "content": "## BOOKINGS SHEET — HEADER ROW\n\nTab name = `cfg_booking_sheet_tab` (default **Bookings**). Row 1 must read exactly:\n\n`Logged At | Status | Name | Email | Meeting | Start (Business TZ) | Invitee Timezone | Join Link | Lead Tier | Lead Score | Known Lead | Canceled By | Cancel Reason | Answers | HubSpot Contact ID | Invitee URI`\n\nMapping mode is **Map Each Column Manually**, so nothing depends on the previous node's output shape.",
+        "height": 228,
+        "width": 420,
+        "color": 4
+      },
+      "name": "Sticky · Sheet Header",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2096,
+        608
+      ],
+      "id": "ecb0da65-c289-4263-94f9-dd8ebbbe58aa"
+    },
+    {
+      "parameters": {
+        "content": "## ERRORS\n\nWorkflow Settings → **Error Workflow** → choose **WF-3 · Error Handler (System)**.\n\nEvery outbound node (HubSpot, Slack, Gmail, Sheets) retries 3× and then continues, so one outage never blocks the others.",
+        "height": 164,
+        "width": 340,
+        "color": 3
+      },
+      "name": "Sticky · Error Handler",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2304,
+        -240
+      ],
+      "id": "73e332d1-15ae-4775-8e78-d0804d780546"
+    },
+    {
+      "parameters": {
+        "events": [
+          "invitee.created",
+          "invitee.canceled"
+        ]
+      },
+      "name": "Calendly · Booking Events",
+      "type": "n8n-nodes-base.calendlyTrigger",
+      "typeVersion": 1,
+      "position": [
+        32,
+        144
+      ],
+      "webhookId": "d892af95-ae92-45c6-b7d8-6a5615049b64",
+      "id": "89023483-29a0-4b59-9a8b-2d961e26c1fd",
+      "credentials": {
+        "calendlyApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      },
+      "notes": "Fires on new bookings, cancellations and reschedules. Webhook is auto-registered on activation."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "⚙️_00cd809",
+              "name": "cfg_company_name",
+              "type": "string",
+              "value": "Acme Services"
+            },
+            {
+              "id": "⚙️_140006a",
+              "name": "cfg_sales_email",
+              "type": "string",
+              "value": "user@example.com"
+            },
+            {
+              "id": "⚙️_21a8acd",
+              "name": "cfg_reply_from_name",
+              "type": "string",
+              "value": "Sarah from Acme Services"
+            },
+            {
+              "id": "⚙️_3689fdf",
+              "name": "cfg_slack_channel",
+              "type": "string",
+              "value": "#sales-leads"
+            },
+            {
+              "id": "⚙️_4c1f6ac",
+              "name": "cfg_timezone",
+              "type": "string",
+              "value": "Asia/Riyadh"
+            },
+            {
+              "id": "⚙️_5381b5f",
+              "name": "cfg_booking_link",
+              "type": "string",
+              "value": "https://calendly.com/your-handle/30min"
+            },
+            {
+              "id": "⚙️_6942408",
+              "name": "cfg_calendly_event_filter",
+              "type": "string",
+              "value": ""
+            },
+            {
+              "id": "⚙️_7af9fbc",
+              "name": "cfg_hubspot_portal_id",
+              "type": "string",
+              "value": ""
+            },
+            {
+              "id": "⚙️_8784f85",
+              "name": "cfg_booking_sheet_id",
+              "type": "string",
+              "value": "PASTE_GOOGLE_SHEET_ID_HERE"
+            },
+            {
+              "id": "⚙️_95747b5",
+              "name": "cfg_booking_sheet_tab",
+              "type": "string",
+              "value": "Bookings"
+            },
+            {
+              "id": "⚙️_10f3f5be",
+              "name": "cfg_prep_checklist",
+              "type": "string",
+              "value": "• A link to your current website or landing page\n• The main result you want in the next 90 days\n• Your rough budget and ideal start date"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "name": "⚙️ SETTINGS",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        272,
+        144
+      ],
+      "id": "f0e31524-7951-4aa8-9e8a-b8993a4262a6",
+      "notes": "CLIENT: change values here only. Nothing else needs editing."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "Nor044b108",
+              "name": "calendly_event",
+              "type": "string",
+              "value": "={{ ($json.event ?? $json.body?.event ?? '').toString() }}"
+            },
+            {
+              "id": "Nor1b0216d",
+              "name": "booking_status",
+              "type": "string",
+              "value": "={{ ($json.event ?? $json.body?.event ?? '') === 'invitee.created' ? (($json.payload ?? $json.body?.payload ?? {}).old_invitee ? 'rescheduled' : 'booked') : (($json.event ?? $json.body?.event ?? '') === 'invitee.canceled' ? (($json.payload ?? $json.body?.payload ?? {}).rescheduled === true ? 'reschedule_old' : 'canceled') : 'unknown') }}"
+            },
+            {
+              "id": "Nor269f054",
+              "name": "booking_email",
+              "type": "string",
+              "value": "={{ (($json.payload ?? $json.body?.payload ?? {}).email ?? '').toString().trim().toLowerCase() }}"
+            },
+            {
+              "id": "Nor399e4fe",
+              "name": "invitee_name",
+              "type": "string",
+              "value": "={{ (($json.payload ?? $json.body?.payload ?? {}).name ?? '').toString().trim() }}"
+            },
+            {
+              "id": "Nor470b9ea",
+              "name": "first_name",
+              "type": "string",
+              "value": "={{ (($json.payload ?? $json.body?.payload ?? {}).first_name || (($json.payload ?? $json.body?.payload ?? {}).name ?? '').toString().trim().split(' ')[0] || 'there').toString() }}"
+            },
+            {
+              "id": "Nor5a0ca13",
+              "name": "last_name",
+              "type": "string",
+              "value": "={{ (($json.payload ?? $json.body?.payload ?? {}).last_name || (($json.payload ?? $json.body?.payload ?? {}).name ?? '').toString().trim().split(' ').slice(1).join(' ') || '').toString() }}"
+            },
+            {
+              "id": "Nor692c20f",
+              "name": "meeting_name",
+              "type": "string",
+              "value": "={{ (($json.payload ?? $json.body?.payload ?? {}).scheduled_event?.name ?? 'Meeting').toString() }}"
+            },
+            {
+              "id": "Nor7690347",
+              "name": "start_time_utc",
+              "type": "string",
+              "value": "={{ ($json.payload ?? $json.body?.payload ?? {}).scheduled_event?.start_time ?? '' }}"
+            },
+            {
+              "id": "Nor8de9ad3",
+              "name": "start_time_business",
+              "type": "string",
+              "value": "={{ ($json.payload ?? $json.body?.payload ?? {}).scheduled_event?.start_time ? DateTime.fromISO(($json.payload ?? $json.body?.payload ?? {}).scheduled_event.start_time).setZone(($json.cfg_timezone || 'UTC')).toFormat(\"ccc d LLL yyyy, h:mm a\") : 'time not provided' }}"
+            },
+            {
+              "id": "Nor990791f",
+              "name": "start_time_invitee",
+              "type": "string",
+              "value": "={{ ($json.payload ?? $json.body?.payload ?? {}).scheduled_event?.start_time ? DateTime.fromISO(($json.payload ?? $json.body?.payload ?? {}).scheduled_event.start_time).setZone((($json.payload ?? $json.body?.payload ?? {}).timezone || ($json.cfg_timezone || 'UTC'))).toFormat(\"ccc d LLL yyyy, h:mm a\") : 'time not provided' }}"
+            },
+            {
+              "id": "Nor100e4d32",
+              "name": "invitee_timezone",
+              "type": "string",
+              "value": "={{ ($json.payload ?? $json.body?.payload ?? {}).timezone || ($json.cfg_timezone || 'UTC') }}"
+            },
+            {
+              "id": "Nor11e5ed4c",
+              "name": "join_url",
+              "type": "string",
+              "value": "={{ ($json.payload ?? $json.body?.payload ?? {}).scheduled_event?.location?.join_url ?? '' }}"
+            },
+            {
+              "id": "Nor1226a022",
+              "name": "location_text",
+              "type": "string",
+              "value": "={{ (($json.payload ?? $json.body?.payload ?? {}).scheduled_event?.location?.location ?? ($json.payload ?? $json.body?.payload ?? {}).scheduled_event?.location?.type ?? '').toString() }}"
+            },
+            {
+              "id": "Nor13893323",
+              "name": "reschedule_url",
+              "type": "string",
+              "value": "={{ ($json.payload ?? $json.body?.payload ?? {}).reschedule_url ?? '' }}"
+            },
+            {
+              "id": "Nor14cd64f4",
+              "name": "cancel_url",
+              "type": "string",
+              "value": "={{ ($json.payload ?? $json.body?.payload ?? {}).cancel_url ?? '' }}"
+            },
+            {
+              "id": "Nor158cc1d9",
+              "name": "canceler_type",
+              "type": "string",
+              "value": "={{ (($json.payload ?? $json.body?.payload ?? {}).cancellation?.canceler_type ?? '').toString().toLowerCase() }}"
+            },
+            {
+              "id": "Nor16d4a790",
+              "name": "cancel_reason",
+              "type": "string",
+              "value": "={{ (($json.payload ?? $json.body?.payload ?? {}).cancellation?.reason ?? '').toString().slice(0, 500) }}"
+            },
+            {
+              "id": "Nor17d0b4b4",
+              "name": "host_name",
+              "type": "string",
+              "value": "={{ ($json.payload ?? $json.body?.payload ?? {}).scheduled_event?.event_memberships?.[0]?.user_name ?? ($json.payload ?? $json.body?.payload ?? {}).scheduled_event?.event_memberships?.[0]?.user_email ?? '' }}"
+            },
+            {
+              "id": "Nor18e690df",
+              "name": "answers_text",
+              "type": "string",
+              "value": "={{ (($json.payload ?? $json.body?.payload ?? {}).questions_and_answers ?? []).map(q => q.question + ': ' + q.answer).join(' | ').slice(0, 1000) }}"
+            },
+            {
+              "id": "Nor193f2651",
+              "name": "utm_source",
+              "type": "string",
+              "value": "={{ ($json.payload ?? $json.body?.payload ?? {}).tracking?.utm_source ?? '' }}"
+            },
+            {
+              "id": "Nor20e5e02e",
+              "name": "invitee_uri",
+              "type": "string",
+              "value": "={{ ($json.payload ?? $json.body?.payload ?? {}).uri ?? '' }}"
+            },
+            {
+              "id": "Nor217f006d",
+              "name": "processed_at",
+              "type": "string",
+              "value": "={{ $now.setZone(($json.cfg_timezone || 'UTC')).toFormat('yyyy-LL-dd HH:mm:ss') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Normalize Booking",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        512,
+        144
+      ],
+      "id": "a1a754c1-ac6d-43d7-93ea-e2c668c8c8e8",
+      "notes": "Flattens Calendly's nested payload into simple fields. Every field has a fallback."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "rb1",
+              "leftValue": "={{ $json.booking_email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "rb2",
+              "leftValue": "={{ ['booked', 'rescheduled', 'canceled'].includes($json.booking_status) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "rb3",
+              "leftValue": "={{ !($('⚙️ SETTINGS').first().json.cfg_calendly_event_filter || '').toString().trim() || $json.meeting_name.toLowerCase().includes(($('⚙️ SETTINGS').first().json.cfg_calendly_event_filter || '').toString().trim().toLowerCase()) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Relevant Booking?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        752,
+        144
+      ],
+      "id": "e4cc4a0f-8a86-4697-8380-c2ffbbaab49e",
+      "notes": "Drops: missing email, the cancel-half of a reschedule, and event types excluded by the filter."
+    },
+    {
+      "parameters": {},
+      "name": "Skip · Not Relevant",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        912,
+        384
+      ],
+      "id": "eed35f0b-3b38-454c-b40a-b13f39a32031",
+      "notes": "Intentional dead end. Nothing to do for this event."
+    },
+    {
+      "parameters": {
+        "authentication": "appToken",
+        "operation": "search",
+        "limit": 1,
+        "filterGroupsUi": {
+          "filterGroupsValues": [
+            {
+              "filtersUi": {
+                "filterValues": [
+                  {
+                    "propertyName": "email",
+                    "value": "={{ $json.booking_email }}"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "properties": [
+            "firstname",
+            "lastname",
+            "lifecyclestage",
+            "ai_lead_tier",
+            "ai_lead_score",
+            "lead_source_detail"
+          ]
+        }
+      },
+      "name": "HubSpot · Find Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        992,
+        144
+      ],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "id": "0fdd25b3-c003-458b-bc02-b21dff37fbd1",
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Looks up the WF-1 lead so Slack can show its tier and score. Empty result = direct booking."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "Bui0fea6c3",
+              "name": "calendly_event",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.calendly_event }}"
+            },
+            {
+              "id": "Bui19a4ca2",
+              "name": "=booking_status",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.booking_status }}"
+            },
+            {
+              "id": "Bui23b9cfd",
+              "name": "booking_email",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.booking_email }}"
+            },
+            {
+              "id": "Bui34bce46",
+              "name": "invitee_name",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.invitee_name }}"
+            },
+            {
+              "id": "Bui49e06a2",
+              "name": "first_name",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.first_name }}"
+            },
+            {
+              "id": "Bui55c6bcf",
+              "name": "last_name",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.last_name }}"
+            },
+            {
+              "id": "Bui6f5e88b",
+              "name": "meeting_name",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.meeting_name }}"
+            },
+            {
+              "id": "Bui7b1b808",
+              "name": "start_time_utc",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.start_time_utc }}"
+            },
+            {
+              "id": "Bui8439ec2",
+              "name": "start_time_business",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.start_time_business }}"
+            },
+            {
+              "id": "Bui91a44da",
+              "name": "start_time_invitee",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.start_time_invitee }}"
+            },
+            {
+              "id": "Bui105235fb",
+              "name": "invitee_timezone",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.invitee_timezone }}"
+            },
+            {
+              "id": "Bui11fce829",
+              "name": "join_url",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.join_url }}"
+            },
+            {
+              "id": "Bui12ea9da7",
+              "name": "location_text",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.location_text }}"
+            },
+            {
+              "id": "Bui13185dab",
+              "name": "reschedule_url",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.reschedule_url }}"
+            },
+            {
+              "id": "Bui14a1a42d",
+              "name": "cancel_url",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.cancel_url }}"
+            },
+            {
+              "id": "Bui15bdae6d",
+              "name": "canceler_type",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.canceler_type }}"
+            },
+            {
+              "id": "Bui16cb4898",
+              "name": "cancel_reason",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.cancel_reason }}"
+            },
+            {
+              "id": "Bui176fbca0",
+              "name": "host_name",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.host_name }}"
+            },
+            {
+              "id": "Bui183563ee",
+              "name": "answers_text",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.answers_text }}"
+            },
+            {
+              "id": "Bui19abf746",
+              "name": "utm_source",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.utm_source }}"
+            },
+            {
+              "id": "Bui204cf91f",
+              "name": "invitee_uri",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.invitee_uri }}"
+            },
+            {
+              "id": "Bui21975147",
+              "name": "processed_at",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.processed_at }}"
+            },
+            {
+              "id": "Bui229d259d",
+              "name": "hubspot_contact_id",
+              "type": "string",
+              "value": "={{ ($json.id ?? '').toString() }}"
+            },
+            {
+              "id": "Bui2389d59a",
+              "name": "is_known_lead",
+              "type": "boolean",
+              "value": "={{ !!$json.id }}"
+            },
+            {
+              "id": "Bui24f16144",
+              "name": "prior_tier",
+              "type": "string",
+              "value": "={{ ($json.properties?.ai_lead_tier ?? '').toString().toLowerCase() }}"
+            },
+            {
+              "id": "Bui257d5168",
+              "name": "prior_score",
+              "type": "string",
+              "value": "={{ ($json.properties?.ai_lead_score ?? '').toString() }}"
+            },
+            {
+              "id": "Bui26a4fc7a",
+              "name": "existing_firstname",
+              "type": "string",
+              "value": "={{ ($json.properties?.firstname ?? '').toString() }}"
+            },
+            {
+              "id": "Bui27e1010c",
+              "name": "existing_lastname",
+              "type": "string",
+              "value": "={{ ($json.properties?.lastname ?? '').toString() }}"
+            },
+            {
+              "id": "Bui2806f289",
+              "name": "existing_lifecycle",
+              "type": "string",
+              "value": "={{ ($json.properties?.lifecyclestage ?? '').toString() }}"
+            },
+            {
+              "id": "Bui2955d3ce",
+              "name": "existing_source",
+              "type": "string",
+              "value": "={{ ($json.properties?.lead_source_detail ?? '').toString() }}"
+            },
+            {
+              "id": "Bui3006fc15",
+              "name": "lead_label",
+              "type": "string",
+              "value": "={{ $json.id ? ($json.properties?.ai_lead_tier ? $json.properties.ai_lead_tier.toString().toUpperCase() + ' lead' + ($json.properties?.ai_lead_score ? ' · score ' + $json.properties.ai_lead_score + '/100' : '') : 'Existing HubSpot contact (not scored)') : 'Direct booking — not in HubSpot yet' }}"
+            },
+            {
+              "id": "Bui319d8253",
+              "name": "hubspot_url",
+              "type": "string",
+              "value": "={{ ($('⚙️ SETTINGS').first().json.cfg_hubspot_portal_id && $json.id) ? 'https://app.hubspot.com/contacts/' + $('⚙️ SETTINGS').first().json.cfg_hubspot_portal_id + '/record/0-1/' + $json.id : '' }}"
+            },
+            {
+              "id": "Bui321db26f",
+              "name": "new_lifecycle",
+              "type": "string",
+              "value": "={{ $('Normalize Booking').first().json.booking_status === 'canceled' ? (($json.properties?.lifecyclestage ?? '') || 'lead') : (['opportunity', 'customer', 'evangelist', 'other'].includes($json.properties?.lifecyclestage ?? '') ? $json.properties.lifecyclestage : 'salesqualifiedlead') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Build Booking Record",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1232,
+        144
+      ],
+      "id": "14a544c6-0b8c-4459-9b57-decb072d4916",
+      "notes": "Single source of truth. Every node after this reads $('Build Booking Record') by name."
+    },
+    {
+      "parameters": {
+        "authentication": "appToken",
+        "email": "={{ encodeURIComponent($json.booking_email) }}",
+        "additionalFields": {
+          "customPropertiesUi": {
+            "customPropertiesValues": [
+              {
+                "property": "meeting_status",
+                "value": "={{ $json.booking_status }}"
+              },
+              {
+                "property": "meeting_start_time",
+                "value": "={{ $json.start_time_business }}"
+              },
+              {
+                "property": "meeting_join_url",
+                "value": "={{ $json.join_url || $json.location_text }}"
+              },
+              {
+                "property": "lead_source_detail",
+                "value": "={{ $json.existing_source || 'calendly-direct' }}"
+              }
+            ]
+          },
+          "firstName": "={{ $json.existing_firstname || ($json.first_name === 'there' ? '' : $json.first_name) }}",
+          "lastName": "={{ $json.existing_lastname || $json.last_name }}",
+          "lifeCycleStage": "={{ $json.new_lifecycle }}"
+        },
+        "options": {}
+      },
+      "name": "HubSpot · Update Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        1472,
+        144
+      ],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "id": "0cedd0d5-26d9-4d1e-8d46-2d9ca353c4e5",
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Booked/rescheduled → Sales Qualified Lead (never moves a customer backwards). Canceled → stage unchanged."
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "rs_booked",
+                    "leftValue": "={{ $('Build Booking Record').first().json.booking_status }}",
+                    "rightValue": "booked",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "BOOKED"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "rs_rescheduled",
+                    "leftValue": "={{ $('Build Booking Record').first().json.booking_status }}",
+                    "rightValue": "rescheduled",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "RESCHEDULED"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "rs_canceled",
+                    "leftValue": "={{ $('Build Booking Record').first().json.booking_status }}",
+                    "rightValue": "canceled",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "CANCELED"
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "OTHER"
+        }
+      },
+      "name": "Route By Booking Status",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1696,
+        112
+      ],
+      "id": "0d612332-24da-42a2-8aa1-a7625e77b247"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('⚙️ SETTINGS').first().json.cfg_slack_channel }}"
+        },
+        "text": "=:calendar: *CALL BOOKED — {{ $('Build Booking Record').first().json.lead_label }}*\n\n*Who:* {{ $('Build Booking Record').first().json.invitee_name || 'not given' }} ({{ $('Build Booking Record').first().json.booking_email }})\n*Meeting:* {{ $('Build Booking Record').first().json.meeting_name }}\n*When:* {{ $('Build Booking Record').first().json.start_time_business }} ({{ $('⚙️ SETTINGS').first().json.cfg_timezone }})\n*Lead's timezone:* {{ $('Build Booking Record').first().json.invitee_timezone }}\n*Join:* {{ $('Build Booking Record').first().json.join_url || $('Build Booking Record').first().json.location_text || 'details in the calendar invite' }}\n{{ $('Build Booking Record').first().json.answers_text ? '*Their answers:* ' + $('Build Booking Record').first().json.answers_text : '' }}\n{{ $('Build Booking Record').first().json.hubspot_url ? '*HubSpot:* ' + $('Build Booking Record').first().json.hubspot_url : '' }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "name": "Slack · Call Booked",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1952,
+        -96
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "id": "cec2485d-02b2-4520-a0a4-0810000df66f",
+      "webhookId": "a998a73c-716e-441f-8b57-e2fb7c1c9381",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Continues on error so a Slack outage never blocks the email or the log."
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('⚙️ SETTINGS').first().json.cfg_slack_channel }}"
+        },
+        "text": "=:arrows_counterclockwise: *CALL RESCHEDULED — {{ $('Build Booking Record').first().json.lead_label }}*\n\n*Who:* {{ $('Build Booking Record').first().json.invitee_name || 'not given' }} ({{ $('Build Booking Record').first().json.booking_email }})\n*Meeting:* {{ $('Build Booking Record').first().json.meeting_name }}\n*New time:* {{ $('Build Booking Record').first().json.start_time_business }} ({{ $('⚙️ SETTINGS').first().json.cfg_timezone }})\n*Join:* {{ $('Build Booking Record').first().json.join_url || $('Build Booking Record').first().json.location_text || 'details in the calendar invite' }}\n{{ $('Build Booking Record').first().json.hubspot_url ? '*HubSpot:* ' + $('Build Booking Record').first().json.hubspot_url : '' }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "name": "Slack · Call Rescheduled",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1952,
+        112
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "id": "4331f24a-a09f-4934-b006-b60285f6b2b2",
+      "webhookId": "a4b116b4-9224-4d1b-b46d-fb5d343020b2",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Continues on error so a Slack outage never blocks the email or the log."
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('⚙️ SETTINGS').first().json.cfg_slack_channel }}"
+        },
+        "text": "=:x: *CALL CANCELED — {{ $('Build Booking Record').first().json.lead_label }}*\n\n*Who:* {{ $('Build Booking Record').first().json.invitee_name || 'not given' }} ({{ $('Build Booking Record').first().json.booking_email }})\n*Was booked for:* {{ $('Build Booking Record').first().json.start_time_business }} ({{ $('⚙️ SETTINGS').first().json.cfg_timezone }})\n*Canceled by:* {{ $('Build Booking Record').first().json.canceler_type === 'host' ? 'your team' : 'the lead' }}\n*Reason:* {{ $('Build Booking Record').first().json.cancel_reason || 'none given' }}\n\n{{ $('Build Booking Record').first().json.canceler_type === 'host' ? '_Canceled by your team, so no email goes to the lead._' : '_A re-book email with your booking link is going to the lead now._' }}\n{{ $('Build Booking Record').first().json.hubspot_url ? '*HubSpot:* ' + $('Build Booking Record').first().json.hubspot_url : '' }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "name": "Slack · Call Canceled",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1952,
+        320
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "id": "c1364a13-ef4b-40a0-ac05-743ed50ace87",
+      "webhookId": "47ed7519-1166-4564-a1a8-6b4950d5b374",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Continues on error so a Slack outage never blocks the email or the log."
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('⚙️ SETTINGS').first().json.cfg_slack_channel }}"
+        },
+        "text": "=:warning: *Calendly event could not be classified*\n\nStatus: `{{ $('Build Booking Record').first().json.booking_status }}`\nEmail: {{ $('Build Booking Record').first().json.booking_email }}\nCalendly event: {{ $('Build Booking Record').first().json.calendly_event }}\n\nPlease check this booking in Calendly manually.",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "name": "Slack · Unrecognised Booking Event",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1952,
+        544
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "id": "e84db29c-5c75-469a-a81a-15d082101705",
+      "webhookId": "8faff7b1-91e7-43b8-a1bb-1381697c0962",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Continues on error so a Slack outage never blocks the email or the log."
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Build Booking Record').first().json.booking_email }}",
+        "subject": "=Before our call on {{ $('Build Booking Record').first().json.start_time_invitee }}",
+        "emailType": "text",
+        "message": "=Hi {{ $('Build Booking Record').first().json.first_name }},\n\nThanks for booking \"{{ $('Build Booking Record').first().json.meeting_name }}\" with {{ $('⚙️ SETTINGS').first().json.cfg_company_name }}. You're confirmed for {{ $('Build Booking Record').first().json.start_time_invitee }} ({{ $('Build Booking Record').first().json.invitee_timezone }}).\n\n{{ $('Build Booking Record').first().json.join_url ? 'Join link: ' + $('Build Booking Record').first().json.join_url : 'The meeting details are in your calendar invite.' }}\n\nTo make the most of our time, it helps if you have these ready:\n{{ $('⚙️ SETTINGS').first().json.cfg_prep_checklist }}\n\n{{ $('Build Booking Record').first().json.reschedule_url ? 'Need a different time? Reschedule here: ' + $('Build Booking Record').first().json.reschedule_url : '' }}\n\nSee you then,\n{{ $('⚙️ SETTINGS').first().json.cfg_reply_from_name }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "={{ $('⚙️ SETTINGS').first().json.cfg_reply_from_name }}",
+          "replyTo": "={{ $('⚙️ SETTINGS').first().json.cfg_sales_email }}"
+        }
+      },
+      "name": "Gmail · Prep Note",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2192,
+        -96
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "id": "34a5b193-b641-45ff-b63c-f6bd9e89a570",
+      "webhookId": "a6b970d6-68a7-4b4e-b81f-3141f73992c7",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GOOGLE_CREDENTIAL_ID",
+          "name": "Google account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Personal prep note. Calendly still sends its own calendar invite. Deactivate this node if the client doesn't want it."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cl1",
+              "leftValue": "={{ $('Build Booking Record').first().json.canceler_type }}",
+              "rightValue": "host",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Canceled By Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2192,
+        320
+      ],
+      "id": "81b2fe3f-25cc-4be6-97c5-057719b67918",
+      "notes": "If your own team canceled, we do not send the lead a 'let's rebook' email."
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Build Booking Record').first().json.booking_email }}",
+        "subject": "=Let's find a new time, {{ $('Build Booking Record').first().json.first_name }}",
+        "emailType": "text",
+        "message": "=Hi {{ $('Build Booking Record').first().json.first_name }},\n\nNo problem at all. I saw our \"{{ $('Build Booking Record').first().json.meeting_name }}\" on {{ $('Build Booking Record').first().json.start_time_invitee }} was cancelled.\n\nWhenever it suits you, you can pick a new time here:\n{{ $('⚙️ SETTINGS').first().json.cfg_booking_link }}\n\nIf anything has changed on your side, just reply to this email and let me know.\n\nBest,\n{{ $('⚙️ SETTINGS').first().json.cfg_reply_from_name }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "={{ $('⚙️ SETTINGS').first().json.cfg_reply_from_name }}",
+          "replyTo": "={{ $('⚙️ SETTINGS').first().json.cfg_sales_email }}"
+        }
+      },
+      "name": "Gmail · Rebook Invite",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2464,
+        480
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "id": "9715148a-b576-4cbb-bebb-e3ecd3bc2553",
+      "webhookId": "24c1dab7-6e85-423d-a93f-1ab8486e68e6",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GOOGLE_CREDENTIAL_ID",
+          "name": "Google account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Win-back email. Only sent when the lead canceled (not your team)."
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "=1LepZWFZd0tKm---5vDcHrBFc-D7ChaT7KXnUqYM0guE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "log booking",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "threadId",
+              "displayName": "threadId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "labelIds",
+              "displayName": "labelIds",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "name": "Sheets · Log Booking",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2624,
+        32
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "id": "f40efdcb-976b-43b6-bdca-9c1fad6b1091",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_CREDENTIAL_ID",
+          "name": "Google account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "One row per booking / reschedule / cancel. Reads Build Booking Record by name, so any branch can feed it."
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Calendly · Booking Events": {
+      "main": [
+        [
+          {
+            "node": "⚙️ SETTINGS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ SETTINGS": {
+      "main": [
+        [
+          {
+            "node": "Normalize Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Booking": {
+      "main": [
+        [
+          {
+            "node": "Relevant Booking?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Relevant Booking?": {
+      "main": [
+        [
+          {
+            "node": "HubSpot · Find Contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip · Not Relevant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot · Find Contact": {
+      "main": [
+        [
+          {
+            "node": "Build Booking Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Booking Record": {
+      "main": [
+        [
+          {
+            "node": "HubSpot · Update Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot · Update Contact": {
+      "main": [
+        [
+          {
+            "node": "Route By Booking Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route By Booking Status": {
+      "main": [
+        [
+          {
+            "node": "Slack · Call Booked",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack · Call Rescheduled",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack · Call Canceled",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack · Unrecognised Booking Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack · Call Booked": {
+      "main": [
+        [
+          {
+            "node": "Gmail · Prep Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail · Prep Note": {
+      "main": [
+        [
+          {
+            "node": "Sheets · Log Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack · Call Rescheduled": {
+      "main": [
+        [
+          {
+            "node": "Sheets · Log Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack · Call Canceled": {
+      "main": [
+        [
+          {
+            "node": "Canceled By Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Canceled By Lead?": {
+      "main": [
+        [
+          {
+            "node": "Gmail · Rebook Invite",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sheets · Log Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail · Rebook Invite": {
+      "main": [
+        [
+          {
+            "node": "Sheets · Log Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "GgtiRcQ5SBBKIIPk",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "cde443d4-78e0-4e9f-851e-9d470e081ebd",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1acf1a17190ae9324a4540c4eee2df728e672b0c691037ef51e222bc93ed61b0"
+  },
+  "nodeGroups": [],
+  "id": "Sa9uAWWkFrLkesFL",
+  "tags": []
+}

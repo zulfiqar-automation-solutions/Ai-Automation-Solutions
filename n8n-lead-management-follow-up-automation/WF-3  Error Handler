@@ -1,0 +1,236 @@
+{
+  "name": "WF-3  Error Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## ERROR HANDLER — set this once\n\nThis workflow runs **only** when WF-1 or WF-2 fails.\n\n**Setup:**\n1. Activate this workflow.\n2. Open WF-1 → Settings → **Error Workflow** → choose this one.\n3. Do the same in WF-2.\n\nAfter that, every failure sends a Slack message naming the exact node that broke and logs a row to the error sheet. You will never again hunt for a silent failure.",
+        "height": 340,
+        "width": 360,
+        "color": 3
+      },
+      "id": "c49b029a-9626-4f84-b72a-3bc4c2b8cc17",
+      "name": "Sticky · Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        144,
+        112
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "32006619-447b-4003-8a40-d89f54dc7e6b",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e0",
+              "name": "cfg_alert_channel",
+              "type": "string",
+              "value": "#automation-alerts"
+            },
+            {
+              "id": "e1",
+              "name": "cfg_error_sheet_id",
+              "type": "string",
+              "value": "PASTE_GOOGLE_SHEET_ID_HERE"
+            },
+            {
+              "id": "e2",
+              "name": "cfg_error_sheet_tab",
+              "type": "string",
+              "value": "Errors"
+            },
+            {
+              "id": "e3",
+              "name": "failed_workflow",
+              "type": "string",
+              "value": "={{ $json.workflow?.name ?? 'unknown workflow' }}"
+            },
+            {
+              "id": "e4",
+              "name": "failed_workflow_id",
+              "type": "string",
+              "value": "={{ $json.workflow?.id ?? '' }}"
+            },
+            {
+              "id": "e5",
+              "name": "failed_node",
+              "type": "string",
+              "value": "={{ $json.execution?.lastNodeExecuted ?? $json.execution?.error?.node?.name ?? 'unknown node' }}"
+            },
+            {
+              "id": "e6",
+              "name": "error_message",
+              "type": "string",
+              "value": "={{ ($json.execution?.error?.message ?? 'no message returned').toString().slice(0, 900) }}"
+            },
+            {
+              "id": "e7",
+              "name": "error_description",
+              "type": "string",
+              "value": "={{ ($json.execution?.error?.description ?? '').toString().slice(0, 500) }}"
+            },
+            {
+              "id": "e8",
+              "name": "execution_url",
+              "type": "string",
+              "value": "={{ $json.execution?.url ?? 'not available' }}"
+            },
+            {
+              "id": "e9",
+              "name": "failed_at",
+              "type": "string",
+              "value": "={{ $now.setZone('Asia/Riyadh').toFormat('yyyy-LL-dd HH:mm:ss') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f299c033-43e5-4267-b655-6f0473e32d9f",
+      "name": "Build Error Report",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        512
+      ],
+      "notes": "Every field has a fallback, so the handler itself can never crash on a missing property."
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $json.cfg_alert_channel }}"
+        },
+        "text": "=:rotating_light: *AUTOMATION FAILURE*\n\n*Workflow:* {{ $json.failed_workflow }}\n*Node that failed:* `{{ $json.failed_node }}`\n*Time:* {{ $json.failed_at }} (Riyadh)\n\n*Error:*\n```\n{{ $json.error_message }}\n```\n{{ $json.error_description ? '*Detail:* ' + $json.error_description : '' }}\n\n*Open the failed run:* {{ $json.execution_url }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "id": "bbe64c09-ecc8-485c-94d1-7e27b6ef4543",
+      "name": "Slack · Failure Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        704,
+        400
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "webhookId": "e208557c-e60a-4ebb-bffd-24d930eaa911",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "url",
+          "value": "={{ $json.cfg_error_sheet_id }}",
+          "__regex": "https:\\/\\/(?:drive|docs)\\.google\\.com(?:\\/.*|)\\/d\\/([0-9a-zA-Z\\-_]+)(?:\\/.*|)"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $json.cfg_error_sheet_tab }}"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Failed At": "={{ $json.failed_at }}",
+            "Workflow": "={{ $json.failed_workflow }}",
+            "Node": "={{ $json.failed_node }}",
+            "Error": "={{ $json.error_message }}",
+            "Detail": "={{ $json.error_description }}",
+            "Execution URL": "={{ $json.execution_url }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "9e34f7b2-9ff1-4dc4-a1dd-58a937566bc1",
+      "name": "Sheets · Error Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        704,
+        592
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_CREDENTIAL_ID",
+          "name": "Google account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Sheet header row must read exactly: Failed At | Workflow | Node | Error | Detail | Execution URL"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Error Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Error Report": {
+      "main": [
+        [
+          {
+            "node": "Slack · Failure Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Sheets · Error Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "0d3fa6b9-eb00-4d5b-b773-6a854c446b43",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1acf1a17190ae9324a4540c4eee2df728e672b0c691037ef51e222bc93ed61b0"
+  },
+  "nodeGroups": [],
+  "id": "GgtiRcQ5SBBKIIPk",
+  "tags": []
+}
