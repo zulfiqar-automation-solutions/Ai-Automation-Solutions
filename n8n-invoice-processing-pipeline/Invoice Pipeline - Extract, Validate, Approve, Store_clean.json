@@ -1,0 +1,1012 @@
+{
+  "name": "Invoice Pipeline - Extract, Validate, Approve, Store",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# 1. INTAKE + READ\n\nA PDF lands in the Drive folder, is downloaded and its text is extracted.\n\n**Red branch** = the PDF could not be read. It is recorded as `error` and the run stops there instead of crashing.",
+        "height": 180,
+        "width": 324,
+        "color": 3
+      },
+      "id": "d2f4ae6a-ceac-41d0-819b-daa1c3f19d0a",
+      "name": "Sticky Intake",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        32,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "content": "# 2. EXTRACT FIELDS\n\nThe AI reads the text and returns the invoice fields as structured data.\n\n`Normalize Fields` turns them into clean types (numbers as numbers, trimmed text) so every later check is predictable.",
+        "height": 148,
+        "width": 500,
+        "color": 5
+      },
+      "id": "628daac2-6c2d-4ef3-9e31-4fbd0bef0026",
+      "name": "Sticky Extract",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        704,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "content": "# 3. VALIDATE\n\nFour checks, each a plain true/false:\n\n- **required** fields present\n- **math**: subtotal + tax = total (0.01 tolerance)\n- **date** not in the future\n- **duplicate**: supplier + invoice number already stored\n\n`Decide Outcome` turns the failures into one sentence a human can read.",
+        "height": 236,
+        "width": 336,
+        "color": 6
+      },
+      "id": "ad7adee6-65a5-4edc-83ec-f3c969e7f9b8",
+      "name": "Sticky Validate",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1456,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "content": "# 4. ROUTE + APPROVE\n\n**Green** every check passed, saved automatically.\n**Yellow** something failed, a human decides in Slack.\n**Grey** already in the database, blocked.\n\nThe system never guesses which number is right. It asks.",
+        "height": 180,
+        "width": 388,
+        "color": 4
+      },
+      "id": "6e590a1f-8adb-410f-9729-1ec331a1aec3",
+      "name": "Sticky Route",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## SETUP BEFORE RUNNING\n\n1. **Credentials**: Google (2 nodes), Postgres pooler (7 nodes), OpenAI, Slack.\n2. **Google Drive Trigger** - select your `invoices-inbox` folder.\n3. **Slack** - select the channel for approvals.\n4. Keep the workflow **inactive**; test with Fetch Test Event + pinned data.\n\n**Note:** Slack *Send and Wait* only completes on an **active** workflow, because it needs a public callback URL. Test everything else first, then activate for the approval test.",
+        "height": 196,
+        "width": 560,
+        "color": 7
+      },
+      "id": "9c745f59-c3e1-475c-9c80-4b80a3e8a733",
+      "name": "Sticky Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        16,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "1o8CQo0F2GP9xM4uHO_fn1eS15bDyMZ8M",
+          "mode": "list",
+          "cachedResultName": "Invoices test",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1o8CQo0F2GP9xM4uHO_fn1eS15bDyMZ8M"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "id": "bf935648-4ae4-4f45-965e-f5407ecb771f",
+      "name": "Google Drive Trigger",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        64,
+        704
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "YOUR_GOOGLE_CREDENTIAL_ID",
+          "name": "Google account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {
+          "binaryPropertyName": "data"
+        }
+      },
+      "id": "775fbd2c-6fa5-40cc-a34d-0c142777abd8",
+      "name": "Download File",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        240,
+        704
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "YOUR_GOOGLE_CREDENTIAL_ID",
+          "name": "Google account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {
+          "joinPages": true
+        }
+      },
+      "id": "6302e00e-1ada-42d4-9ece-e8e4897d4ed6",
+      "name": "Extract PDF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        400,
+        704
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with d as (\n  insert into documents (file_name, file_hash, source, status, status_reason)\n  values ($1, $2, 'folder', 'error', 'PDF text could not be extracted')\n  returning id, file_name\n)\ninsert into processing_events (document_id, stage, outcome, detail)\nselect id, 'error', 'fail', jsonb_build_object('failed_node', 'Extract PDF Text') from d\nreturning document_id;",
+        "options": {
+          "queryReplacement": "={{ [ $('Google Drive Trigger').item.json.name, $('Google Drive Trigger').item.json.md5Checksum || $('Google Drive Trigger').item.json.id ] }}"
+        }
+      },
+      "id": "69faf7da-54e3-4aba-a497-893b5a9927a6",
+      "name": "Log Unreadable File",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        464,
+        928
+      ],
+      "notesInFlow": true,
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      },
+      "notes": "Unreadable PDF: recorded, not crashed"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with d as (\n  insert into documents (file_name, file_hash, source, status, status_reason)\n  values ($1, $2, 'folder', 'received', 'Intake OK, text extracted')\n  returning id, file_name, status, received_at\n), e_intake as (\n  insert into processing_events (document_id, stage, outcome, detail)\n  select id, 'intake', 'ok', jsonb_build_object('file_name', file_name) from d\n), e_read as (\n  insert into processing_events (document_id, stage, outcome, detail)\n  select id, 'read', 'ok', jsonb_build_object('text_length', length($3::text)) from d\n)\nselect * from d;",
+        "options": {
+          "queryReplacement": "={{ [ $('Google Drive Trigger').item.json.name, $('Google Drive Trigger').item.json.md5Checksum || $('Google Drive Trigger').item.json.id, $json.text ] }}"
+        }
+      },
+      "id": "c6e46568-4cd1-48d6-97ff-fcdd42b7b782",
+      "name": "Create Document Row",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        512,
+        496
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "notesInFlow": true,
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      },
+      "notes": "One query: document row + intake event + read event"
+    },
+    {
+      "parameters": {
+        "text": "={{ $('Extract PDF Text').item.json.text }}",
+        "attributes": {
+          "attributes": [
+            {
+              "name": "supplier_name",
+              "description": "The company that ISSUED the invoice (the seller), not the Bill To / customer.",
+              "required": true
+            },
+            {
+              "name": "supplier_tax_id",
+              "description": "The supplier's tax ID / VAT number. Empty string if not printed."
+            },
+            {
+              "name": "invoice_number",
+              "description": "The invoice number exactly as printed, keeping any dashes or slashes. It always sits next to a label such as 'Invoice No', 'Invoice #', 'Invoice Number', 'Bill No', 'Bill Number', 'Document No' or 'Reference No'. Text with no such label next to it (a street address, a date, a tax ID, a PO number, a page number) is NOT an invoice number. If no labelled number is printed, return an empty string.\nDo not guess. Returning an empty string for a missing field is correct and expected; a wrong value is far worse than an empty one."
+            },
+            {
+              "name": "invoice_date",
+              "description": "The invoice issue date, converted to YYYY-MM-DD. Empty string if not printed."
+            },
+            {
+              "name": "due_date",
+              "description": "The payment due date, converted to YYYY-MM-DD. Empty string if not printed."
+            },
+            {
+              "name": "currency",
+              "description": "The 3-letter currency code, e.g. SAR or USD."
+            },
+            {
+              "name": "subtotal",
+              "type": "number",
+              "description": "The amount before tax, as a plain number with no thousands separators. 0 if not printed."
+            },
+            {
+              "name": "tax",
+              "type": "number",
+              "description": "The tax or VAT amount, as a plain number. 0 if not printed."
+            },
+            {
+              "name": "total",
+              "type": "number",
+              "description": "The final total payable, as a plain number.",
+              "required": true
+            }
+          ]
+        },
+        "options": {
+          "systemPromptTemplate": "You read invoice text and return only the fields requested.\n\nRules:\n- Copy values exactly as printed. Never calculate, correct or complete a value.\n- If the printed total disagrees with subtotal + tax, return the PRINTED total. A later step handles the disagreement.\n- If a field is not printed, return an empty string (or 0 for a number). Never invent one.\n- The supplier is the issuer of the invoice, never the Bill To party."
+        }
+      },
+      "id": "542185b4-4d23-4668-b406-801ee805ff26",
+      "name": "AI Extract Fields",
+      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
+      "typeVersion": 1,
+      "position": [
+        608,
+        720
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "notesInFlow": true,
+      "notes": "Told NOT to fix bad maths - that is the validator's job"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "id": "ccb0320b-fd34-4891-867e-58a27fec878a",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        704,
+        944
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "n1",
+              "name": "document_id",
+              "type": "string",
+              "value": "={{ $('Create Document Row').item.json.id }}"
+            },
+            {
+              "id": "n2",
+              "name": "file_name",
+              "type": "string",
+              "value": "={{ $('Google Drive Trigger').item.json.name }}"
+            },
+            {
+              "id": "n3",
+              "name": "supplier_name",
+              "type": "string",
+              "value": "={{ String((($json.output ?? $json).supplier_name) ?? '').trim() }}"
+            },
+            {
+              "id": "n4",
+              "name": "supplier_tax_id",
+              "type": "string",
+              "value": "={{ String((($json.output ?? $json).supplier_tax_id) ?? '').trim() }}"
+            },
+            {
+              "id": "n5",
+              "name": "invoice_number",
+              "type": "string",
+              "value": "={{ String((($json.output ?? $json).invoice_number) ?? '').trim() }}"
+            },
+            {
+              "id": "n6",
+              "name": "invoice_date",
+              "type": "string",
+              "value": "={{ String((($json.output ?? $json).invoice_date) ?? '').trim() }}"
+            },
+            {
+              "id": "n7",
+              "name": "due_date",
+              "type": "string",
+              "value": "={{ String((($json.output ?? $json).due_date) ?? '').trim() }}"
+            },
+            {
+              "id": "n8",
+              "name": "currency",
+              "type": "string",
+              "value": "={{ String((($json.output ?? $json).currency) ?? 'SAR').trim().toUpperCase() }}"
+            },
+            {
+              "id": "n9",
+              "name": "subtotal",
+              "type": "number",
+              "value": "={{ Number((($json.output ?? $json).subtotal) ?? 0) }}"
+            },
+            {
+              "id": "n10",
+              "name": "tax",
+              "type": "number",
+              "value": "={{ Number((($json.output ?? $json).tax) ?? 0) }}"
+            },
+            {
+              "id": "n11",
+              "name": "total",
+              "type": "number",
+              "value": "={{ Number((($json.output ?? $json).total) ?? 0) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0d8be04f-8516-4258-a7ba-e9992147dfd9",
+      "name": "Normalize Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        944,
+        720
+      ],
+      "notesInFlow": true,
+      "notes": "Clean types in, predictable checks out"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.invoice_exists($1, $2, $3) as already_exists;",
+        "options": {
+          "queryReplacement": "={{ [ $json.supplier_tax_id, $json.supplier_name, $json.invoice_number ] }}"
+        }
+      },
+      "id": "b9539264-2f0d-4b85-8fde-c38f867ed4df",
+      "name": "Check Duplicate",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1120,
+        544
+      ],
+      "notesInFlow": true,
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      },
+      "notes": "One rule, one place: the DB function decides"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "is_duplicate",
+              "type": "boolean",
+              "value": "={{ $json.already_exists === true }}"
+            },
+            {
+              "id": "c2",
+              "name": "has_required",
+              "type": "boolean",
+              "value": "={{ $('Normalize Fields').item.json.supplier_name !== '' && $('Normalize Fields').item.json.invoice_number !== '' && $('Normalize Fields').item.json.invoice_date !== '' && $('Normalize Fields').item.json.total > 0 }}"
+            },
+            {
+              "id": "c3",
+              "name": "math_ok",
+              "type": "boolean",
+              "value": "={{ Math.abs(($('Normalize Fields').item.json.subtotal + $('Normalize Fields').item.json.tax) - $('Normalize Fields').item.json.total) <= 0.01 }}"
+            },
+            {
+              "id": "c4",
+              "name": "date_ok",
+              "type": "boolean",
+              "value": "={{ $('Normalize Fields').item.json.invoice_date !== '' && $('Normalize Fields').item.json.invoice_date <= $now.toISODate() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4ebe01d6-b461-4620-ad72-fda72029ba5a",
+      "name": "Run Checks",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1296,
+        720
+      ],
+      "notesInFlow": true,
+      "notes": "Four plain true/false answers"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d1",
+              "name": "failures",
+              "type": "string",
+              "value": "={{ [ $json.has_required ? null : 'a required field is missing', $json.math_ok ? null : 'subtotal + tax does not equal the printed total', $json.date_ok ? null : 'the invoice date is missing or in the future' ].filter(f => f).join('; ') }}"
+            },
+            {
+              "id": "d2",
+              "name": "decision",
+              "type": "string",
+              "value": "={{ $json.is_duplicate ? 'duplicate' : (($json.has_required && $json.math_ok && $json.date_ok) ? 'auto_approve' : 'needs_review') }}"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "394780a8-76d7-4480-bdc1-a32e990962ef",
+      "name": "Decide Outcome",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1488,
+        720
+      ],
+      "notesInFlow": true,
+      "notes": "Failures become one human sentence"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "r1",
+                    "leftValue": "={{ $json.decision }}",
+                    "rightValue": "auto_approve",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Auto-approve"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "r2",
+                    "leftValue": "={{ $json.decision }}",
+                    "rightValue": "needs_review",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Needs review"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "r3",
+                    "leftValue": "={{ $json.decision }}",
+                    "rightValue": "duplicate",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Duplicate"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "15fabc02-7bb7-4f25-a3da-486b441d5894",
+      "name": "Route Decision",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        1680,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with ins as (\n  insert into invoices (document_id, supplier_name, supplier_tax_id, invoice_number,\n                        invoice_date, due_date, currency, subtotal, tax, total,\n                        approval_path, human_corrected)\n  values ($1::uuid, $2, nullif($3,''), $4, $5::date, nullif($6,'')::date, $7,\n          $8::numeric, $9::numeric, $10::numeric, 'auto', false)\n  returning id\n), upd as (\n  update documents\n     set status = 'auto_approved',\n         status_reason = 'All checks passed',\n         extracted_json = $11::jsonb\n   where id = $1::uuid\n)\ninsert into processing_events (document_id, stage, outcome, detail)\nselect $1::uuid, 'store', 'ok', jsonb_build_object('approval_path', 'auto')\nreturning document_id;",
+        "options": {
+          "queryReplacement": "={{ [ $('Normalize Fields').item.json.document_id, $('Normalize Fields').item.json.supplier_name, $('Normalize Fields').item.json.supplier_tax_id, $('Normalize Fields').item.json.invoice_number, $('Normalize Fields').item.json.invoice_date, $('Normalize Fields').item.json.due_date, $('Normalize Fields').item.json.currency, $('Normalize Fields').item.json.subtotal, $('Normalize Fields').item.json.tax, $('Normalize Fields').item.json.total, JSON.stringify($('Normalize Fields').item.json) ] }}"
+        }
+      },
+      "id": "75a80e55-60ae-4573-8270-76e2daede462",
+      "name": "Save Invoice (Auto)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1952,
+        448
+      ],
+      "notesInFlow": true,
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      },
+      "notes": "Saved with no human touch"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with upd as (\n  update documents\n     set status = 'needs_review',\n         status_reason = $2,\n         extracted_json = $3::jsonb\n   where id = $1::uuid\n)\ninsert into processing_events (document_id, stage, outcome, detail)\nselect $1::uuid, 'validate', 'warn', jsonb_build_object('failures', $2::text)\nreturning document_id;",
+        "options": {
+          "queryReplacement": "={{ [ $('Normalize Fields').item.json.document_id, $json.failures, JSON.stringify($('Normalize Fields').item.json) ] }}"
+        }
+      },
+      "id": "edd4cc18-f8c4-4f47-8593-151e7bb6e413",
+      "name": "Mark Needs Review",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1952,
+        688
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with upd as (\n  update documents\n     set status = 'duplicate',\n         status_reason = 'Already stored: same supplier and invoice number',\n         extracted_json = $2::jsonb\n   where id = $1::uuid\n)\ninsert into processing_events (document_id, stage, outcome, detail)\nselect $1::uuid, 'validate', 'fail', jsonb_build_object('reason', 'duplicate')\nreturning document_id;",
+        "options": {
+          "queryReplacement": "={{ [ $('Normalize Fields').item.json.document_id, JSON.stringify($('Normalize Fields').item.json) ] }}"
+        }
+      },
+      "id": "3cba7f72-f00a-4413-bc5d-3ed2607c3b1b",
+      "name": "Mark Duplicate",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2032,
+        960
+      ],
+      "notesInFlow": true,
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      },
+      "notes": "Blocked before it reaches the invoices table"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "sendAndWait",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0C6MCZ7GQ7",
+          "mode": "list",
+          "cachedResultName": "invoice-pipeline"
+        },
+        "message": "=*Invoice needs review*\n\n*File:* {{ $('Normalize Fields').item.json.file_name }}\n*Supplier:* {{ $('Normalize Fields').item.json.supplier_name }}\n*Invoice #:* {{ $('Normalize Fields').item.json.invoice_number }}\n*Date:* {{ $('Normalize Fields').item.json.invoice_date }}\n\n*Subtotal:* {{ $('Normalize Fields').item.json.subtotal }}\n*Tax:* {{ $('Normalize Fields').item.json.tax }}\n*Total:* {{ $('Normalize Fields').item.json.total }} {{ $('Normalize Fields').item.json.currency }}\n\n*Why it was flagged:* {{ $('Decide Outcome').item.json.failures }}\n\nApprove to store it as-is, or reject it.",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "disapproveLabel": "Reject"
+          }
+        },
+        "options": {}
+      },
+      "id": "3e890697-fe03-42ee-ad3c-1ce155eb2681",
+      "name": "Slack Approval",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        2192,
+        688
+      ],
+      "webhookId": "b1000000-0000-4000-8000-000000000010",
+      "notesInFlow": true,
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      },
+      "notes": "Needs an ACTIVE workflow to receive the reply"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ap1",
+              "leftValue": "={{ $json.data?.approved ?? $json.approved }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "b28d4cda-26bc-4d87-abbe-ba00760d3f64",
+      "name": "Is Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2448,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with ins as (\n  insert into invoices (document_id, supplier_name, supplier_tax_id, invoice_number,\n                        invoice_date, due_date, currency, subtotal, tax, total,\n                        approval_path, human_corrected)\n  values ($1::uuid, $2, nullif($3,''), $4, $5::date, nullif($6,'')::date, $7,\n          $8::numeric, $9::numeric, $10::numeric, 'human', false)\n  returning id\n), upd as (\n  update documents\n     set status = 'approved_by_human',\n         status_reason = 'Approved in Slack despite: ' || $11,\n         reviewed_by = 'slack',\n         reviewed_at = now()\n   where id = $1::uuid\n)\ninsert into processing_events (document_id, stage, outcome, detail)\nselect $1::uuid, 'approval', 'ok', jsonb_build_object('approved', true, 'flagged_for', $11::text)\nreturning document_id;",
+        "options": {
+          "queryReplacement": "={{ [ $('Normalize Fields').item.json.document_id, $('Normalize Fields').item.json.supplier_name, $('Normalize Fields').item.json.supplier_tax_id, $('Normalize Fields').item.json.invoice_number, $('Normalize Fields').item.json.invoice_date, $('Normalize Fields').item.json.due_date, $('Normalize Fields').item.json.currency, $('Normalize Fields').item.json.subtotal, $('Normalize Fields').item.json.tax, $('Normalize Fields').item.json.total, $('Decide Outcome').item.json.failures ] }}"
+        }
+      },
+      "id": "75ea3994-c1e1-4724-8650-88b46c44a24c",
+      "name": "Save Invoice (Human)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2480,
+        256
+      ],
+      "notesInFlow": true,
+      "alwaysOutputData": false,
+      "executeOnce": false,
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "approval_path = human, so the audit trail stays honest"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with upd as (\n  update documents\n     set status = 'rejected',\n         status_reason = 'Rejected in Slack. Flagged for: ' || $2,\n         reviewed_by = 'slack',\n         reviewed_at = now()\n   where id = $1::uuid\n)\ninsert into processing_events (document_id, stage, outcome, detail)\nselect $1::uuid, 'approval', 'fail', jsonb_build_object('approved', false)\nreturning document_id;",
+        "options": {
+          "queryReplacement": "={{ [ $('Normalize Fields').item.json.document_id, $('Decide Outcome').item.json.failures ] }}"
+        }
+      },
+      "id": "b287540b-fefb-4f71-8112-8a340abd99df",
+      "name": "Mark Rejected",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2528,
+        976
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with upd as (\n  update documents\n     set status = 'error',\n         status_reason = 'Approved by a human but could not be stored: ' || $2\n   where id = $1::uuid\n)\ninsert into processing_events (document_id, stage, outcome, detail)\nselect $1::uuid, 'store', 'fail', jsonb_build_object('error', $2::text)\nreturning document_id;",
+        "options": {
+          "queryReplacement": "={{ [ $('Normalize Fields').item.json.document_id, String($json.error?.message ?? $json.error ?? 'unknown error') ] }}"
+        }
+      },
+      "id": "c08cf9d1-b301-4264-944b-7b523c30a880",
+      "name": "Mark Approval Failed",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2576,
+        496
+      ],
+      "notesInFlow": true,
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      },
+      "notes": "Human approved, but the database refused the row. Record it as an error instead of leaving it stuck."
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Google Drive Trigger": {
+      "main": [
+        [
+          {
+            "node": "Download File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download File": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF Text": {
+      "main": [
+        [
+          {
+            "node": "Create Document Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Unreadable File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Document Row": {
+      "main": [
+        [
+          {
+            "node": "AI Extract Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Extract Fields",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Extract Fields": {
+      "main": [
+        [
+          {
+            "node": "Normalize Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Fields": {
+      "main": [
+        [
+          {
+            "node": "Check Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Run Checks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Checks": {
+      "main": [
+        [
+          {
+            "node": "Decide Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide Outcome": {
+      "main": [
+        [
+          {
+            "node": "Route Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Decision": {
+      "main": [
+        [
+          {
+            "node": "Save Invoice (Auto)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Needs Review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Needs Review": {
+      "main": [
+        [
+          {
+            "node": "Slack Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack Approval": {
+      "main": [
+        [
+          {
+            "node": "Is Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Approved?": {
+      "main": [
+        [
+          {
+            "node": "Save Invoice (Human)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Invoice (Human)": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Mark Approval Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "5e137248-06cc-4579-a094-5f40dcc8832d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1acf1a17190ae9324a4540c4eee2df728e672b0c691037ef51e222bc93ed61b0"
+  },
+  "nodeGroups": [],
+  "id": "gAW0xIU8mTfh4X90",
+  "tags": []
+}
